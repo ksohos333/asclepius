@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 pub const VERMEULEN_K_SHBG: f64 = 1.0e9;
 pub const VERMEULEN_K_ALB_PER_GDL: f64 = 1.0e6 / 66500.0;
 pub const DEFAULT_ALBUMIN_GDL: f64 = 4.3;
+pub const DERIVED_IDS: &[&str] = &["free_testosterone_vermeulen", "homa_ir"];
 
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct DerivedValue {

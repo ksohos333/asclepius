@@ -7,7 +7,7 @@ use std::path::Path;
 use std::sync::Mutex;
 use uuid::Uuid;
 
-pub const SCHEMA_VERSION: i64 = 2;
+pub const SCHEMA_VERSION: i64 = 3;
 
 const SCHEMA: &str = r#"
 CREATE TABLE IF NOT EXISTS meta (
@@ -50,6 +50,27 @@ CREATE TABLE IF NOT EXISTS hypotheses (
     review_by TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_hypotheses_status ON hypotheses(status);
+CREATE TABLE IF NOT EXISTS trials (
+    id TEXT PRIMARY KEY,
+    intervention_id TEXT NOT NULL,
+    intervention_name TEXT NOT NULL,
+    purpose TEXT NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('planned', 'active', 'completed', 'paused', 'aborted')),
+    started_at INTEGER,
+    ended_at INTEGER,
+    baseline_fact_ids TEXT,
+    outcome_analytes TEXT NOT NULL,
+    dose TEXT,
+    notes TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_trials_status ON trials(status);
+CREATE TABLE IF NOT EXISTS trial_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    trial_id TEXT NOT NULL REFERENCES trials(id),
+    ts INTEGER NOT NULL,
+    kind TEXT NOT NULL,
+    text TEXT NOT NULL
+);
 "#;
 
 #[derive(Debug, Clone, Serialize)]
@@ -153,6 +174,104 @@ pub struct HypothesisListInput {
 pub struct HypothesisUpdateInput {
     pub id: String,
     pub status: HypothesisStatus,
+}
+
+#[derive(
+    Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema,
+)]
+pub enum TrialStatus {
+    #[default]
+    #[serde(rename = "planned")]
+    Planned,
+    #[serde(rename = "active")]
+    Active,
+    #[serde(rename = "completed")]
+    Completed,
+    #[serde(rename = "paused")]
+    Paused,
+    #[serde(rename = "aborted")]
+    Aborted,
+}
+
+impl TrialStatus {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            TrialStatus::Planned => "planned",
+            TrialStatus::Active => "active",
+            TrialStatus::Completed => "completed",
+            TrialStatus::Paused => "paused",
+            TrialStatus::Aborted => "aborted",
+        }
+    }
+    pub fn parse(s: &str) -> Option<Self> {
+        match s {
+            "planned" => Some(TrialStatus::Planned),
+            "active" => Some(TrialStatus::Active),
+            "completed" => Some(TrialStatus::Completed),
+            "paused" => Some(TrialStatus::Paused),
+            "aborted" => Some(TrialStatus::Aborted),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct TrialRow {
+    pub id: String,
+    pub intervention_id: String,
+    pub intervention_name: String,
+    pub purpose: String,
+    pub status: TrialStatus,
+    pub started_at: Option<i64>,
+    pub ended_at: Option<i64>,
+    pub baseline_fact_ids: Option<Vec<String>>,
+    pub outcome_analytes: Vec<String>,
+    pub dose: Option<String>,
+    pub notes: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct TrialLogRow {
+    pub id: i64,
+    pub trial_id: String,
+    pub ts: i64,
+    pub kind: String,
+    pub text: String,
+}
+
+#[derive(Debug, Clone, Default, Deserialize, schemars::JsonSchema)]
+pub struct TrialBeginInput {
+    pub intervention_id: String,
+    pub purpose: String,
+    pub outcome_analytes: Vec<String>,
+    #[serde(default)]
+    pub dose: Option<String>,
+    #[serde(default)]
+    pub notes: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize, schemars::JsonSchema)]
+pub struct TrialLogInput {
+    pub trial_id: String,
+    pub kind: String,
+    pub text: String,
+}
+
+#[derive(Debug, Clone, Default, Deserialize, schemars::JsonSchema)]
+pub struct TrialStatusInput {
+    pub id: String,
+    pub status: TrialStatus,
+}
+
+#[derive(Debug, Clone, Default, Deserialize, schemars::JsonSchema)]
+pub struct TrialListInput {
+    #[serde(default)]
+    pub status: Option<TrialStatus>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize, schemars::JsonSchema)]
+pub struct TrialReportInput {
+    pub trial_id: String,
 }
 
 #[derive(Debug)]
@@ -289,7 +408,7 @@ impl Db {
                 "SELECT id, kind, analyte, value, unit, input_ids, formula_version, source, panel_id, collected_at, recorded_at, superseded_by, note
                  FROM facts
                  WHERE superseded_by IS NULL AND (?1 IS NULL OR analyte = ?1)
-                 ORDER BY recorded_at ASC, id ASC
+                 ORDER BY recorded_at ASC, rowid ASC
                  LIMIT ?2",
             )
             .map_err(db_err)?;
@@ -408,6 +527,199 @@ impl Db {
             .map_err(db_err)?;
         Ok(changed > 0)
     }
+
+    pub fn begin_trial(
+        &self,
+        input: &TrialBeginInput,
+        intervention_name: &str,
+        baseline_fact_ids: Vec<String>,
+    ) -> Result<String, AsclepiusError> {
+        let mut conn = self.conn.lock().expect("db mutex poisoned");
+        let id = format!("tri_{}", Uuid::new_v4());
+        let now = now_secs();
+        let tx = conn.transaction().map_err(db_err)?;
+        tx.execute(
+            "INSERT INTO trials (id, intervention_id, intervention_name, purpose, status, started_at, ended_at, baseline_fact_ids, outcome_analytes, dose, notes)
+             VALUES (?1, ?2, ?3, ?4, 'planned', NULL, NULL, ?5, ?6, ?7, ?8)",
+            params![
+                id,
+                input.intervention_id,
+                intervention_name,
+                input.purpose,
+                serde_json::to_string(&baseline_fact_ids).ok(),
+                serde_json::to_string(&input.outcome_analytes).ok(),
+                input.dose,
+                input.notes
+            ],
+        )
+        .map_err(db_err)?;
+        tx.execute(
+            "INSERT INTO trial_log (trial_id, ts, kind, text) VALUES (?1, ?2, 'note', ?3)",
+            params![id, now, "trial created"],
+        )
+        .map_err(db_err)?;
+        tx.commit().map_err(db_err)?;
+        Ok(id)
+    }
+
+    pub fn append_trial_log(&self, input: &TrialLogInput) -> Result<bool, AsclepiusError> {
+        let conn = self.conn.lock().expect("db mutex poisoned");
+        let changed = conn
+            .execute(
+                "INSERT INTO trial_log (trial_id, ts, kind, text) VALUES (?1, ?2, ?3, ?4)",
+                params![input.trial_id, now_secs(), input.kind, input.text],
+            )
+            .map_err(db_err)?;
+        Ok(changed > 0)
+    }
+
+    pub fn set_trial_status(&self, input: &TrialStatusInput) -> Result<bool, AsclepiusError> {
+        let conn = self.conn.lock().expect("db mutex poisoned");
+        let now = now_secs();
+        let changed = match input.status {
+            TrialStatus::Active => conn
+                .execute(
+                    "UPDATE trials SET status = 'active', started_at = COALESCE(started_at, ?2) WHERE id = ?1",
+                    params![input.id, now],
+                )
+                .map_err(db_err)?,
+            TrialStatus::Completed | TrialStatus::Aborted => conn
+                .execute(
+                    "UPDATE trials SET status = ?2, ended_at = ?3, started_at = COALESCE(started_at, ?3) WHERE id = ?1",
+                    params![input.id, input.status.as_str(), now],
+                )
+                .map_err(db_err)?,
+            _ => conn
+                .execute(
+                    "UPDATE trials SET status = ?2 WHERE id = ?1",
+                    params![input.id, input.status.as_str()],
+                )
+                .map_err(db_err)?,
+        };
+        Ok(changed > 0)
+    }
+
+    pub fn trials(
+        &self,
+        status: Option<TrialStatus>,
+        limit: usize,
+    ) -> Result<Vec<TrialRow>, AsclepiusError> {
+        let conn = self.conn.lock().expect("db mutex poisoned");
+        let status_filter = status.map(|s| s.as_str());
+        let mut stmt = conn
+            .prepare(
+                "SELECT id, intervention_id, intervention_name, purpose, status, started_at, ended_at, baseline_fact_ids, outcome_analytes, dose, notes
+                 FROM trials
+                 WHERE (?1 IS NULL OR status = ?1)
+                 ORDER BY rowid DESC
+                 LIMIT ?2",
+            )
+            .map_err(db_err)?;
+        let rows = stmt
+            .query_map(params![status_filter, limit as i64], map_trial_row)
+            .map_err(db_err)?
+            .filter_map(|r| r.ok())
+            .collect();
+        Ok(rows)
+    }
+
+    pub fn get_trial(&self, id: &str) -> Result<Option<TrialRow>, AsclepiusError> {
+        let conn = self.conn.lock().expect("db mutex poisoned");
+        let mut stmt = conn
+            .prepare(
+                "SELECT id, intervention_id, intervention_name, purpose, status, started_at, ended_at, baseline_fact_ids, outcome_analytes, dose, notes
+                 FROM trials WHERE id = ?1",
+            )
+            .map_err(db_err)?;
+        let mut rows = stmt.query_map(params![id], map_trial_row).map_err(db_err)?;
+        match rows.next() {
+            Some(row) => Ok(Some(row.map_err(db_err)?)),
+            None => Ok(None),
+        }
+    }
+
+    pub fn trial_log_entries(&self, trial_id: &str) -> Result<Vec<TrialLogRow>, AsclepiusError> {
+        let conn = self.conn.lock().expect("db mutex poisoned");
+        let mut stmt = conn
+            .prepare(
+                "SELECT id, trial_id, ts, kind, text FROM trial_log
+                 WHERE trial_id = ?1 ORDER BY id ASC",
+            )
+            .map_err(db_err)?;
+        let rows = stmt
+            .query_map(params![trial_id], |row| {
+                Ok(TrialLogRow {
+                    id: row.get(0)?,
+                    trial_id: row.get(1)?,
+                    ts: row.get(2)?,
+                    kind: row.get(3)?,
+                    text: row.get(4)?,
+                })
+            })
+            .map_err(db_err)?
+            .filter_map(|r| r.ok())
+            .collect();
+        Ok(rows)
+    }
+
+    pub fn latest_fact(&self, analyte: &str) -> Result<Option<FactRow>, AsclepiusError> {
+        let conn = self.conn.lock().expect("db mutex poisoned");
+        let mut stmt = conn
+            .prepare(
+                "SELECT id, kind, analyte, value, unit, input_ids, formula_version, source, panel_id, collected_at, recorded_at, superseded_by, note
+                 FROM facts
+                 WHERE superseded_by IS NULL AND analyte = ?1
+                 ORDER BY recorded_at DESC, rowid DESC
+                 LIMIT 1",
+            )
+            .map_err(db_err)?;
+        let mut rows = stmt.query_map(params![analyte], map_fact_row).map_err(db_err)?;
+        match rows.next() {
+            Some(row) => Ok(Some(row.map_err(db_err)?)),
+            None => Ok(None),
+        }
+    }
+
+    pub fn latest_fact_ids(&self, analytes: &[String]) -> Vec<(String, Option<String>)> {
+        analytes
+            .iter()
+            .map(|a| {
+                let id = self
+                    .latest_fact(a)
+                    .ok()
+                    .and_then(|row| row.map(|r| r.id));
+                (a.clone(), id)
+            })
+            .collect()
+    }
+}
+
+fn now_secs() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0)
+}
+
+fn map_trial_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<TrialRow> {
+    let status_str: String = row.get(4)?;
+    let baseline: Option<String> = row.get(7)?;
+    let outcomes: Option<String> = row.get(8)?;
+    Ok(TrialRow {
+        id: row.get(0)?,
+        intervention_id: row.get(1)?,
+        intervention_name: row.get(2)?,
+        purpose: row.get(3)?,
+        status: TrialStatus::parse(&status_str).unwrap_or(TrialStatus::Planned),
+        started_at: row.get(5)?,
+        ended_at: row.get(6)?,
+        baseline_fact_ids: baseline.and_then(|b| serde_json::from_str(&b).ok()),
+        outcome_analytes: outcomes
+            .and_then(|o| serde_json::from_str(&o).ok())
+            .unwrap_or_default(),
+        dose: row.get(9)?,
+        notes: row.get(10)?,
+    })
 }
 
 fn map_fact_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<FactRow> {
@@ -548,6 +860,77 @@ mod tests {
         assert!(
             !db.set_hypothesis_status("hyp_missing", HypothesisStatus::Refuted)
                 .unwrap()
+        );
+    }
+
+    #[test]
+    fn history_same_second_ties_break_by_insertion_order() {
+        let db = Db::in_memory().unwrap();
+        let first = result("ferritin", 100.0);
+        db.commit_panel(None, None, &[&first], "lab_report").unwrap();
+        let second = result("ferritin", 200.0);
+        db.commit_panel(None, None, &[&second], "lab_report").unwrap();
+        let hist = db.history(Some("ferritin"), 10).unwrap();
+        assert_eq!(hist.len(), 2);
+        assert_eq!(hist[0].value, 100.0, "insertion order must hold within a second");
+        assert_eq!(hist[1].value, 200.0);
+    }
+
+    #[test]
+    fn trial_lifecycle_with_log() {
+        let db = Db::in_memory().unwrap();
+        let input = TrialBeginInput {
+            intervention_id: "zinc_picolinate".into(),
+            purpose: "test effect on skin".into(),
+            outcome_analytes: vec!["testosterone_total".into()],
+            dose: Some("25 mg/day".into()),
+            notes: None,
+        };
+        let id = db
+            .begin_trial(&input, "Zinc (picolinate)", vec!["lab_abc".into()])
+            .unwrap();
+        assert!(id.starts_with("tri_"));
+        let rows = db.trials(None, 10).unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].status, TrialStatus::Planned);
+        assert_eq!(
+            rows[0].baseline_fact_ids.clone().unwrap(),
+            vec!["lab_abc".to_string()]
+        );
+        assert!(
+            db.append_trial_log(&TrialLogInput {
+                trial_id: id.clone(),
+                kind: "note".into(),
+                text: "week 2: no change".into(),
+            })
+            .unwrap()
+        );
+        assert!(
+            db.set_trial_status(&TrialStatusInput {
+                id: id.clone(),
+                status: TrialStatus::Active,
+            })
+            .unwrap()
+        );
+        let row = db.get_trial(&id).unwrap().unwrap();
+        assert_eq!(row.status, TrialStatus::Active);
+        assert!(row.started_at.is_some());
+        let log = db.trial_log_entries(&id).unwrap();
+        assert_eq!(log.len(), 2);
+        assert!(
+            db.set_trial_status(&TrialStatusInput {
+                id: id.clone(),
+                status: TrialStatus::Completed,
+            })
+            .unwrap()
+        );
+        assert!(db.get_trial(&id).unwrap().unwrap().ended_at.is_some());
+        assert!(
+            !db.set_trial_status(&TrialStatusInput {
+                id: "tri_missing".into(),
+                status: TrialStatus::Aborted,
+            })
+            .unwrap()
         );
     }
 }

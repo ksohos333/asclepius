@@ -1,0 +1,35 @@
+[[triage]]
+id = "cardiac_emergency"
+patterns = ["chest pain", "crushing pressure", "pain spreading to arm", "pain spreading to jaw", "severe shortness of breath", "trouble breathing", "heart racing with faintness"]
+urgency = "emergency"
+message = "These can be signs of a cardiac event. Stop and seek emergency care now (call emergency services). Herbal or optimization work waits."
+
+[[triage]]
+id = "psychiatric_emergency"
+patterns = ["suicidal", "kill myself", "end my life", "hurt myself", "self-harm", "not want to be alive"]
+urgency = "emergency"
+message = "This needs immediate human support. Contact a crisis line or emergency services now. You deserve immediate care, not a supplement protocol."
+
+[[triage]]
+id = "anaphylaxis"
+patterns = ["throat closing", "throat tightening", "severe allergic reaction", "swelling of tongue", "swelling of lips with difficulty breathing"]
+urgency = "emergency"
+message = "Possible anaphylaxis. Use an epinephrine auto-injector if available and call emergency services immediately."
+
+[[triage]]
+id = "neuro_emergency"
+patterns = ["sudden severe headache", "worst headache of my life", "face drooping", "slurred speech", "one side weakness", "one-sided weakness", "sudden confusion", "sudden vision loss"]
+urgency = "emergency"
+message = "These can signal stroke or other neurological emergencies. Seek emergency care immediately."
+
+[[triage]]
+id = "urgent_infection"
+patterns = ["fever with stiff neck", "fever with rash", "fever above 103", "fever above 39.4", "persistent vomiting", "unable to keep fluids"]
+urgency = "urgent"
+message = "This pattern needs same-day medical evaluation. Do not attempt to manage it with natural interventions alone."
+
+[[triage]]
+id = "persistent_symptoms"
+patterns = ["fever lasting more than three days", "unexplained weight loss", "getting worse for weeks", "night sweats for weeks"]
+urgency = "prompt"
+message = "Persistent unexplained symptoms deserve a clinician's workup in person soon. Root-cause optimization complements that; it does not replace it."

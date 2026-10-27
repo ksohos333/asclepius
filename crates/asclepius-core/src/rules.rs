@@ -172,6 +172,102 @@ pub fn interpret(rules: &RuleSet, latest: &[LatestValue]) -> Interpretation {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+pub enum Urgency {
+    #[serde(rename = "emergency")]
+    Emergency,
+    #[serde(rename = "urgent")]
+    Urgent,
+    #[serde(rename = "prompt")]
+    Prompt,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct TriageRule {
+    pub id: String,
+    pub patterns: Vec<String>,
+    pub urgency: Urgency,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct TriageHit {
+    pub rule_id: String,
+    pub urgency: Urgency,
+    pub matched_pattern: String,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Default, Deserialize, schemars::JsonSchema)]
+pub struct TriageInput {
+    pub text: String,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct TriageSet {
+    rules: Vec<TriageRule>,
+}
+
+#[derive(Debug, Deserialize)]
+struct TriageFile {
+    triage: Vec<TriageRule>,
+}
+
+impl TriageSet {
+    pub fn load_dir(dir: &Path) -> Result<Self, AsclepiusError> {
+        let mut rules = Vec::new();
+        let mut entries: Vec<_> = std::fs::read_dir(dir)?
+            .filter_map(|e| e.ok())
+            .map(|e| e.path())
+            .filter(|p| p.extension().is_some_and(|x| x == "toml"))
+            .collect();
+        entries.sort();
+        if entries.is_empty() {
+            return Err(AsclepiusError::Io(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                format!("no .toml triage packs found in {}", dir.display()),
+            )));
+        }
+        for path in entries {
+            let raw = std::fs::read_to_string(&path)?;
+            let parsed: TriageFile =
+                toml::from_str(&raw).map_err(|source| AsclepiusError::Toml {
+                    file: path.display().to_string(),
+                    source,
+                })?;
+            rules.extend(parsed.triage);
+        }
+        Ok(Self { rules })
+    }
+
+    pub fn len(&self) -> usize {
+        self.rules.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.rules.is_empty()
+    }
+}
+
+pub fn triage_check(set: &TriageSet, text: &str) -> Vec<TriageHit> {
+    let lower = text.to_lowercase();
+    let mut hits = Vec::new();
+    for rule in &set.rules {
+        for pattern in &rule.patterns {
+            if lower.contains(&pattern.to_lowercase()) {
+                hits.push(TriageHit {
+                    rule_id: rule.id.clone(),
+                    urgency: rule.urgency,
+                    matched_pattern: pattern.clone(),
+                    message: rule.message.clone(),
+                });
+                break;
+            }
+        }
+    }
+    hits
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -274,5 +370,21 @@ mod tests {
         let out = interpret(&rules(), &latest);
         assert!(out.findings.is_empty());
         assert!(out.untested_suggestions.is_empty());
+    }
+
+    #[test]
+    fn triage_matches_patterns_case_insensitively() {
+        let set = TriageSet {
+            rules: vec![TriageRule {
+                id: "chest_pain".into(),
+                patterns: vec!["chest pain".into(), "crushing pressure".into()],
+                urgency: Urgency::Emergency,
+                message: "seek emergency care now".into(),
+            }],
+        };
+        let hits = triage_check(&set, "I have mild CHEST PAIN since morning");
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].urgency, Urgency::Emergency);
+        assert!(triage_check(&set, "just a headache").is_empty());
     }
 }

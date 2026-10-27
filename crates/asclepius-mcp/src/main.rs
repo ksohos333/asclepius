@@ -1,15 +1,23 @@
 use asclepius_core::analyte::AnalyteRegistry;
 use asclepius_core::conditions::{ConditionLibrary, ConditionQuery};
-use asclepius_core::derived::{FreeTInput, HomaInput, free_testosterone_vermeulen, homa_ir};
+use asclepius_core::derived::{
+    DERIVED_IDS, FreeTInput, HomaInput, free_testosterone_vermeulen, homa_ir,
+};
+use asclepius_core::interventions::{
+    FLAG_REQUIRES_BASELINE_LABS, InterventionLibrary, ProtocolInput, propose,
+};
 use asclepius_core::panel::{
     AnalyteResult, CommitInput, PanelInput, normalize_panel, normalize_value,
 };
 use asclepius_core::profile::ProfileUpdate;
 use asclepius_core::range::RangeSet;
-use asclepius_core::rules::{LatestValue, RuleSet, interpret};
+use asclepius_core::rules::{
+    LatestValue, RuleSet, TriageInput, TriageSet, interpret, triage_check,
+};
 use asclepius_core::store::{
     Db, HistoryQuery, HypothesisListInput, HypothesisRegisterInput, HypothesisUpdateInput,
-    LineageQuery,
+    LineageQuery, TrialBeginInput, TrialListInput, TrialLogInput, TrialReportInput,
+    TrialStatusInput,
 };
 use asclepius_core::{NAME, VERSION};
 use rmcp::handler::server::wrapper::Parameters;
@@ -25,6 +33,8 @@ struct Asclepius {
     ranges: Arc<RangeSet>,
     rules: Arc<RuleSet>,
     conditions: Arc<ConditionLibrary>,
+    interventions: Arc<InterventionLibrary>,
+    triage: Arc<TriageSet>,
     db: Arc<Db>,
 }
 
@@ -348,6 +358,239 @@ impl Asclepius {
     }
 
     #[tool(
+        description = "Propose a root-cause protocol for condition-card targets (e.g. [\"testosterone_patterns\", \"acne_root_causes\"]). Natural-first ordering (lifestyle, diet, nutrients, botanicals, then physician-required), screened against the profile: contraindications exclude items, avoid-level interactions are removed, serotonergic burden is flagged, dosing ceilings are listed. Use explore_condition to find valid target ids."
+    )]
+    fn propose_protocol(
+        &self,
+        Parameters(ProtocolInput { targets }): Parameters<ProtocolInput>,
+    ) -> Result<CallToolResult, McpError> {
+        if targets.is_empty() {
+            return Err(McpError::invalid_params("targets is required", None));
+        }
+        let known: Vec<&str> = self
+            .conditions
+            .all()
+            .iter()
+            .map(|c| c.id.as_str())
+            .collect();
+        let unknown: Vec<&String> = targets
+            .iter()
+            .filter(|t| !known.contains(&t.as_str()))
+            .collect();
+        if !unknown.is_empty() {
+            return Err(McpError::invalid_params(
+                format!(
+                    "unknown condition targets: {}. known cards: {}",
+                    unknown
+                        .iter()
+                        .map(|s| s.as_str())
+                        .collect::<Vec<_>>()
+                        .join(", "),
+                    known.join(", ")
+                ),
+                None,
+            ));
+        }
+        let profile = self.db.profile().map_err(domain_error)?;
+        let proposal = propose(&self.interventions, &targets, &profile);
+        let payload = serde_json::to_value(&proposal)
+            .map_err(|e| McpError::internal_error(e.to_string(), None))?;
+        Ok(CallToolResult::success(vec![json_content(payload)?]))
+    }
+
+    #[tool(
+        description = "Safety gate: check free-text symptom descriptions for red-flag patterns requiring emergency, urgent, or prompt conventional care. Always call this before or during any protocol discussion involving new or worsening symptoms. It overrides optimization priorities."
+    )]
+    fn triage_check(
+        &self,
+        Parameters(TriageInput { text }): Parameters<TriageInput>,
+    ) -> Result<CallToolResult, McpError> {
+        if text.trim().is_empty() {
+            return Err(McpError::invalid_params("text is required", None));
+        }
+        let hits = triage_check(&self.triage, &text);
+        let payload = serde_json::json!({
+            "hits": hits,
+            "clear": hits.is_empty(),
+            "note": if hits.is_empty() { "no red-flag patterns matched; proceed with root-cause work" } else { "red-flag pattern(s) matched: address conventional care first" },
+        });
+        Ok(CallToolResult::success(vec![json_content(payload)?]))
+    }
+
+    #[tool(
+        description = "Begin a structured n=1 trial of an intervention (e.g. zinc_picolinate for skin). Outcome analytes must be registry names or derived ids (free_testosterone_vermeulen, homa_ir). If the intervention requires baseline labs, every outcome analyte must have a committed fact first — the gate rejects otherwise. The trial starts in planned status; set active with trial_update_status when you begin."
+    )]
+    fn trial_begin(
+        &self,
+        Parameters(input): Parameters<TrialBeginInput>,
+    ) -> Result<CallToolResult, McpError> {
+        let card = self
+            .interventions
+            .get(&input.intervention_id)
+            .ok_or_else(|| {
+                let ids: Vec<&str> = self
+                    .interventions
+                    .all()
+                    .iter()
+                    .map(|c| c.id.as_str())
+                    .collect();
+                McpError::invalid_params(
+                    format!(
+                        "unknown intervention: {}. available: {}",
+                        input.intervention_id,
+                        ids.join(", ")
+                    ),
+                    None,
+                )
+            })?;
+        for analyte in &input.outcome_analytes {
+            let known =
+                self.registry.get(analyte).is_some() || DERIVED_IDS.contains(&analyte.as_str());
+            if !known {
+                return Err(McpError::invalid_params(
+                    format!(
+                        "outcome analyte not recognized: {analyte}. use registry analyte ids or derived ids ({}); commit labs first",
+                        DERIVED_IDS.join(", ")
+                    ),
+                    None,
+                ));
+            }
+        }
+        let mut baseline_ids: Vec<String> = Vec::new();
+        let mut missing: Vec<String> = Vec::new();
+        let latest = self.db.latest_fact_ids(&input.outcome_analytes);
+        for (analyte, fact_id) in &latest {
+            match fact_id {
+                Some(id) => baseline_ids.push(id.clone()),
+                None => missing.push(analyte.clone()),
+            }
+        }
+        if card
+            .flags
+            .contains(&FLAG_REQUIRES_BASELINE_LABS.to_string())
+            && !missing.is_empty()
+        {
+            return Err(McpError::invalid_params(
+                format!(
+                    "baseline gate: {} requires baseline labs before a trial. commit values first for: {}. use lab_commit",
+                    input.intervention_id,
+                    missing.join(", ")
+                ),
+                None,
+            ));
+        }
+        let id = self
+            .db
+            .begin_trial(&input, &card.name, baseline_ids)
+            .map_err(domain_error)?;
+        Ok(CallToolResult::success(vec![json_content(
+            serde_json::json!({ "id": id, "status": "planned", "baseline_fact_ids": self.db.get_trial(&id).ok().flatten().and_then(|t| t.baseline_fact_ids) }),
+        )?]))
+    }
+
+    #[tool(
+        description = "Append a log entry to a trial. kind: note, dose_change, side_effect, or outcome."
+    )]
+    fn trial_log(
+        &self,
+        Parameters(input): Parameters<TrialLogInput>,
+    ) -> Result<CallToolResult, McpError> {
+        if self
+            .db
+            .get_trial(&input.trial_id)
+            .map_err(domain_error)?
+            .is_none()
+        {
+            return Err(McpError::invalid_params(
+                format!("trial not found: {}", input.trial_id),
+                None,
+            ));
+        }
+        self.db.append_trial_log(&input).map_err(domain_error)?;
+        Ok(CallToolResult::success(vec![json_content(
+            serde_json::json!({ "ok": true }),
+        )?]))
+    }
+
+    #[tool(
+        description = "Advance trial status: planned -> active -> completed (or paused, aborted). Start and end timestamps are captured automatically."
+    )]
+    fn trial_update_status(
+        &self,
+        Parameters(input): Parameters<TrialStatusInput>,
+    ) -> Result<CallToolResult, McpError> {
+        let changed = self.db.set_trial_status(&input).map_err(domain_error)?;
+        if !changed {
+            return Err(McpError::invalid_params(
+                format!("trial not found: {}", input.id),
+                None,
+            ));
+        }
+        let row = self
+            .db
+            .get_trial(&input.id)
+            .map_err(domain_error)?
+            .ok_or_else(|| McpError::internal_error("trial vanished", None))?;
+        let payload = serde_json::to_value(&row)
+            .map_err(|e| McpError::internal_error(e.to_string(), None))?;
+        Ok(CallToolResult::success(vec![json_content(payload)?]))
+    }
+
+    #[tool(
+        description = "List n=1 trials, optionally filtered by status (planned, active, completed, paused, aborted), newest first."
+    )]
+    fn trial_list(
+        &self,
+        Parameters(TrialListInput { status }): Parameters<TrialListInput>,
+    ) -> Result<CallToolResult, McpError> {
+        let rows = self.db.trials(status, 50).map_err(domain_error)?;
+        let payload = serde_json::to_value(&rows)
+            .map_err(|e| McpError::internal_error(e.to_string(), None))?;
+        Ok(CallToolResult::success(vec![json_content(payload)?]))
+    }
+
+    #[tool(
+        description = "Full n=1 trial report: trial row, chronological log, and outcome comparison — baseline fact values vs latest committed values per outcome analyte, with deltas. Commit retest labs with lab_commit, then read this."
+    )]
+    fn trial_report(
+        &self,
+        Parameters(TrialReportInput { trial_id }): Parameters<TrialReportInput>,
+    ) -> Result<CallToolResult, McpError> {
+        let row = self
+            .db
+            .get_trial(&trial_id)
+            .map_err(domain_error)?
+            .ok_or_else(|| {
+                McpError::invalid_params(format!("trial not found: {trial_id}"), None)
+            })?;
+        let log = self.db.trial_log_entries(&trial_id).map_err(domain_error)?;
+        let mut outcomes = Vec::new();
+        for analyte in &row.outcome_analytes {
+            let baseline = row
+                .baseline_fact_ids
+                .as_ref()
+                .and_then(|ids| ids.first())
+                .and_then(|id| self.db.get_fact(id).ok().flatten());
+            let latest = self.db.latest_fact(analyte).ok().flatten();
+            outcomes.push(serde_json::json!({
+                "analyte": analyte,
+                "baseline": baseline.as_ref().map(|f| serde_json::json!({"value": f.value, "unit": f.unit, "collected_at": f.collected_at})),
+                "latest": latest.as_ref().map(|f| serde_json::json!({"value": f.value, "unit": f.unit, "collected_at": f.collected_at})),
+                "delta": match (baseline.as_ref(), latest.as_ref()) {
+                    (Some(b), Some(l)) => Some(l.value - b.value),
+                    _ => None,
+                },
+            }));
+        }
+        let payload = serde_json::json!({
+            "trial": row,
+            "log": log,
+            "outcomes": outcomes,
+        });
+        Ok(CallToolResult::success(vec![json_content(payload)?]))
+    }
+
+    #[tool(
         description = "Validate, unit-convert, and range-assess a panel of lab values. Input: list of {analyte, value, unit?} where analyte accepts common names (e.g. 'total testosterone', 'TSH', 'ferritin') and unit is optional lab notation (e.g. 'nmol/L', 'ng/dL'). Returns per-analyte canonical values, plausibility checks, and both population and functional range assessments with sources. Does not persist; use for interpretation of raw values."
     )]
     fn lab_normalize(
@@ -420,15 +663,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let ranges = RangeSet::load_dir(&root.join("ranges"), &registry)?;
     let rules = RuleSet::load_dir(&root.join("rules"), &registry)?;
     let conditions = ConditionLibrary::load_dir(&root.join("conditions"))?;
+    let interventions = InterventionLibrary::load_dir(&root.join("interventions"))?;
+    let triage = TriageSet::load_dir(&root.join("triage"))?;
     let db_path = data_home().join("asclepius.db");
     let db = Db::open(&db_path)?;
     eprintln!(
-        "asclepius {} serving: {} analytes, {} ranges, {} rules, {} condition cards from {} | ledger {}",
+        "asclepius {} serving: {} analytes, {} ranges, {} rules, {} condition cards, {} interventions, {} triage rules from {} | ledger {}",
         VERSION,
         registry.all().len(),
         ranges.len(),
         rules.len(),
         conditions.all().len(),
+        interventions.all().len(),
+        triage.len(),
         root.display(),
         db_path.display()
     );
@@ -437,6 +684,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         ranges: Arc::new(ranges),
         rules: Arc::new(rules),
         conditions: Arc::new(conditions),
+        interventions: Arc::new(interventions),
+        triage: Arc::new(triage),
         db: Arc::new(db),
     };
     let service = doctor

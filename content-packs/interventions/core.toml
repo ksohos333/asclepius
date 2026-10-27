@@ -1,0 +1,155 @@
+[[intervention]]
+id = "sleep_optimization"
+name = "Sleep Optimization"
+category = "lifestyle"
+tier = "B"
+summary = "7-9h consistent sleep is the highest-leverage free intervention for testosterone, cortisol rhythm, and skin repair. Most testosterone is produced during sleep; restriction measurably lowers it within a week."
+dosing = [{ form = "behavioral protocol", min = 7, max = 9, unit = "hours/night", notes = "consistent schedule, dark cool room, morning light anchor" }]
+targets = ["testosterone_patterns", "acne_root_causes"]
+sources = ["sleep restriction RCTs showing testosterone decline (Leproult & Van Cauter, JAMA 2011)"]
+confidence = "high"
+review_by = "2027-01-15"
+
+[[intervention]]
+id = "resistance_training"
+name = "Resistance Training"
+category = "lifestyle"
+tier = "B"
+summary = "Compound-movement resistance training 3-4x/week raises testosterone acutely and improves body composition and insulin sensitivity, both of which feed back into hormone and skin health."
+dosing = [{ form = "compound lifts", min = 3, max = 4, unit = "sessions/week" }]
+targets = ["testosterone_patterns", "insulin_resistance_patterns"]
+sources = ["resistance training and hormonal response literature"]
+confidence = "medium"
+review_by = "2027-01-15"
+
+[[intervention]]
+id = "low_glycemic_diet"
+name = "Low-Glycemic-Load Diet"
+category = "diet"
+tier = "B"
+summary = "Reducing glycemic load lowers insulin and IGF-1 signaling, the best-evidenced dietary lever for acne, and the core lever for early insulin resistance."
+dosing = [{ form = "dietary pattern", min = 8, max = 12, unit = "weeks trial", notes = "whole-food basis; monitor fasting insulin before and after" }]
+targets = ["insulin_resistance_patterns", "acne_root_causes"]
+sources = ["RCTs on glycemic load and acne (Smith et al. 2007 and successors)"]
+confidence = "medium"
+review_by = "2027-01-15"
+
+[[intervention]]
+id = "dairy_elimination_trial"
+name = "Dairy Elimination Trial"
+category = "diet"
+tier = "B"
+summary = "Eliminate dairy (especially whey and skim) for 8-12 weeks and observe skin response. Association is moderately evidenced; individual response varies widely. Reintroduce deliberately to test."
+dosing = [{ form = "elimination", min = 8, max = 12, unit = "weeks", notes = "reintroduce one form at a time; whey protein counts as dairy" }]
+targets = ["acne_root_causes"]
+sources = ["observational and small RCT literature on dairy and acne"]
+confidence = "low"
+review_by = "2026-12-15"
+
+[[intervention]]
+id = "zinc_picolinate"
+name = "Zinc (picolinate)"
+category = "nutrient"
+tier = "B"
+summary = "Zinc supports testosterone production and has modest RCT evidence in acne at adequate status. Long-term high doses deplete copper."
+dosing = [{ form = "zinc picolinate", min = 15, max = 30, unit = "mg/day elemental", notes = "away from food if tolerated; take with food if nausea" }]
+ceiling = { amount = 50, unit = "mg/day", reason = "copper depletion risk with prolonged intake above 50 mg/day" }
+interactions = [{ with = "copper", effect = "prolonged zinc intake impairs copper absorption", severity = "caution" }]
+targets = ["testosterone_patterns", "acne_root_causes"]
+sources = ["zine and acne RCTs", "zinc-status and testosterone studies"]
+confidence = "medium"
+review_by = "2027-01-15"
+
+[[intervention]]
+id = "vitamin_d3"
+name = "Vitamin D3"
+category = "nutrient"
+tier = "B"
+summary = "Correct deficiency first, then maintain. Test 25-OH-D before starting and after 3 months; aim for the functional band, not megadoses."
+dosing = [{ form = "cholecalciferol", min = 1000, max = 4000, unit = "IU/day", notes = "with fat-containing meal" }]
+ceiling = { amount = 4000, unit = "IU/day routine", reason = "routine intake above 4000 IU/day without monitoring risks hypercalcemia" }
+flags = ["requires_baseline_labs"]
+targets = ["testosterone_patterns"]
+sources = ["Endocrine Society guidance", "vitamin D and testosterone observational + small RCT literature"]
+confidence = "medium"
+review_by = "2027-01-15"
+
+[[intervention]]
+id = "omega3_epa"
+name = "Omega-3 (EPA-dominant)"
+category = "nutrient"
+tier = "C"
+summary = "EPA-dominant fish oil shifts inflammatory eicosanoid balance; modest evidence in inflammatory skin conditions and systemic inflammation markers."
+dosing = [{ form = "fish oil (EPA-dominant)", min = 1, max = 2, unit = "g/day combined EPA+DHA" }]
+targets = ["acne_root_causes"]
+sources = ["omega-3 and inflammation literature; acne evidence emerging"]
+confidence = "low"
+review_by = "2026-12-15"
+
+[[intervention]]
+id = "iron_bisglycinate"
+name = "Iron (bisglycinate)"
+category = "nutrient"
+tier = "B"
+summary = "Corrects low ferritin when confirmed and absorption-limited diets are in play. Never supplement blind: require baseline ferritin and retest."
+dosing = [{ form = "iron bisglycinate", min = 18, max = 30, unit = "mg/day elemental", notes = "every-other-day dosing improves absorption fraction" }]
+ceiling = { amount = 45, unit = "mg/day unsupervised", reason = "iron overload risk; supervise higher doses with labs" }
+contraindicated_if = ["hemochromatosis", "iron overload"]
+flags = ["requires_baseline_labs"]
+targets = ["iron_status_patterns"]
+sources = ["iron supplementation and absorption literature (every-other-day dosing studies)"]
+confidence = "medium"
+review_by = "2027-01-15"
+
+[[intervention]]
+id = "magnesium_glycinate"
+name = "Magnesium (glycinate)"
+category = "nutrient"
+tier = "C"
+summary = "Cofactor for testosterone synthesis and sleep quality; deficiency is common. Glycinate is gentle on the gut."
+dosing = [{ form = "magnesium bisglycinate", min = 200, max = 400, unit = "mg/day elemental", notes = "evening" }]
+targets = []
+sources = ["magnesium status and endocrine literature, observational"]
+confidence = "low"
+review_by = "2026-12-15"
+
+[[intervention]]
+id = "ashwagandha"
+name = "Ashwagandha (KSM-66 or equivalent extract)"
+category = "botanical"
+tier = "B"
+summary = "Adaptogen with small RCTs showing cortisol reduction and modest testosterone support under stress. Avoid in pregnancy; check thyroid interactions."
+dosing = [{ form = "standardized root extract", min = 300, max = 600, unit = "mg/day" }]
+classes = ["adaptogen"]
+targets = ["testosterone_patterns"]
+sources = ["small RCTs on ashwagandha, cortisol and testosterone"]
+confidence = "low"
+review_by = "2026-12-15"
+
+[[intervention]]
+id = "st_johns_wort"
+name = "St. John's Wort"
+category = "botanical"
+tier = "B"
+summary = "Serotonergic botanical with real antidepressant evidence and real interaction burden. Explicitly avoided in post-SSRI contexts: serotonergic stimulation is exactly the pathway PSSD literature implicates."
+dosing = [{ form = "standardized extract", min = 300, max = 900, unit = "mg/day" }]
+classes = ["serotonergic"]
+contraindicated_if = ["pssd", "post-ssri sexual dysfunction", "paws"]
+interactions = [{ with = "serotonergic", effect = "additive serotonergic activity; serotonin syndrome risk in combination", severity = "avoid" }]
+targets = []
+sources = ["Cochrane review of St. John's Wort for depression", "PSSD literature on serotonergic mechanisms (tier C)"]
+confidence = "medium"
+review_by = "2026-12-15"
+
+[[intervention]]
+id = "testosterone_therapy"
+name = "Testosterone Replacement Therapy"
+category = "pharmaceutical"
+tier = "A"
+summary = "Evidence-based for confirmed clinical hypogonadism under endocrinologist supervision. Not a first-line optimization tool: it suppresses the HPT axis and fertility, and requires sustained medical monitoring."
+dosing = [{ form = "physician-managed", min = 0, max = 0, unit = "as prescribed", notes = "dosing is exclusively clinician-managed" }]
+flags = ["physician_required"]
+targets = ["testosterone_patterns"]
+sources = ["Endocrine Society clinical practice guidelines"]
+confidence = "high"
+review_by = "2027-01-15"
