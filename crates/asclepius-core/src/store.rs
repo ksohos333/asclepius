@@ -7,7 +7,7 @@ use std::path::Path;
 use std::sync::Mutex;
 use uuid::Uuid;
 
-pub const SCHEMA_VERSION: i64 = 1;
+pub const SCHEMA_VERSION: i64 = 2;
 
 const SCHEMA: &str = r#"
 CREATE TABLE IF NOT EXISTS meta (
@@ -41,6 +41,15 @@ CREATE TABLE IF NOT EXISTS facts (
 );
 CREATE INDEX IF NOT EXISTS idx_facts_analyte ON facts(analyte);
 CREATE INDEX IF NOT EXISTS idx_facts_panel ON facts(panel_id);
+CREATE TABLE IF NOT EXISTS hypotheses (
+    id TEXT PRIMARY KEY,
+    statement TEXT NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('open', 'supported', 'refuted', 'superseded')),
+    basis TEXT,
+    created_at INTEGER NOT NULL,
+    review_by TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_hypotheses_status ON hypotheses(status);
 "#;
 
 #[derive(Debug, Clone, Serialize)]
@@ -79,6 +88,71 @@ pub struct LineageQuery {
     pub id: String,
     #[serde(default)]
     pub depth: Option<usize>,
+}
+
+#[derive(
+    Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema,
+)]
+pub enum HypothesisStatus {
+    #[default]
+    #[serde(rename = "open")]
+    Open,
+    #[serde(rename = "supported")]
+    Supported,
+    #[serde(rename = "refuted")]
+    Refuted,
+    #[serde(rename = "superseded")]
+    Superseded,
+}
+
+impl HypothesisStatus {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            HypothesisStatus::Open => "open",
+            HypothesisStatus::Supported => "supported",
+            HypothesisStatus::Refuted => "refuted",
+            HypothesisStatus::Superseded => "superseded",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct HypothesisRow {
+    pub id: String,
+    pub statement: String,
+    pub status: HypothesisStatus,
+    pub basis: Option<serde_json::Value>,
+    pub created_at: i64,
+    pub review_by: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct HypothesisRegisterInput {
+    pub statement: String,
+    #[serde(default)]
+    pub fact_ids: Vec<String>,
+    #[serde(default)]
+    pub rule_ids: Vec<String>,
+    #[serde(default)]
+    pub pmids: Vec<String>,
+    #[serde(default)]
+    pub note: Option<String>,
+    #[serde(default)]
+    pub review_by: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize, schemars::JsonSchema)]
+pub struct HypothesisListInput {
+    #[serde(default)]
+    pub status: Option<HypothesisStatus>,
+    #[serde(default)]
+    pub limit: Option<usize>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize, schemars::JsonSchema)]
+pub struct HypothesisUpdateInput {
+    pub id: String,
+    pub status: HypothesisStatus,
 }
 
 #[derive(Debug)]
@@ -259,6 +333,81 @@ impl Db {
         };
         Ok(Some(LineageNode { fact, inputs }))
     }
+
+    pub fn add_hypothesis(
+        &self,
+        input: &HypothesisRegisterInput,
+    ) -> Result<String, AsclepiusError> {
+        let conn = self.conn.lock().expect("db mutex poisoned");
+        let id = format!("hyp_{}", Uuid::new_v4());
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs() as i64)
+            .unwrap_or(0);
+        let basis = serde_json::to_value(input).ok().map(|v| v.to_string());
+        conn.execute(
+            "INSERT INTO hypotheses (id, statement, status, basis, created_at, review_by)
+             VALUES (?1, ?2, 'open', ?3, ?4, ?5)",
+            params![id, input.statement, basis, now, input.review_by],
+        )
+        .map_err(db_err)?;
+        Ok(id)
+    }
+
+    pub fn hypotheses(
+        &self,
+        status: Option<&HypothesisStatus>,
+        limit: usize,
+    ) -> Result<Vec<HypothesisRow>, AsclepiusError> {
+        let conn = self.conn.lock().expect("db mutex poisoned");
+        let status_filter = status.map(|s| s.as_str());
+        let mut stmt = conn
+            .prepare(
+                "SELECT id, statement, status, basis, created_at, review_by
+                 FROM hypotheses
+                 WHERE (?1 IS NULL OR status = ?1)
+                 ORDER BY created_at DESC
+                 LIMIT ?2",
+            )
+            .map_err(db_err)?;
+        let rows = stmt
+            .query_map(params![status_filter, limit as i64], |row| {
+                let status_str: String = row.get(2)?;
+                let basis: Option<String> = row.get(3)?;
+                Ok(HypothesisRow {
+                    id: row.get(0)?,
+                    statement: row.get(1)?,
+                    status: match status_str.as_str() {
+                        "supported" => HypothesisStatus::Supported,
+                        "refuted" => HypothesisStatus::Refuted,
+                        "superseded" => HypothesisStatus::Superseded,
+                        _ => HypothesisStatus::Open,
+                    },
+                    basis: basis.and_then(|b| serde_json::from_str(&b).ok()),
+                    created_at: row.get(4)?,
+                    review_by: row.get(5)?,
+                })
+            })
+            .map_err(db_err)?
+            .filter_map(|r| r.ok())
+            .collect();
+        Ok(rows)
+    }
+
+    pub fn set_hypothesis_status(
+        &self,
+        id: &str,
+        status: HypothesisStatus,
+    ) -> Result<bool, AsclepiusError> {
+        let conn = self.conn.lock().expect("db mutex poisoned");
+        let changed = conn
+            .execute(
+                "UPDATE hypotheses SET status = ?2 WHERE id = ?1",
+                params![id, status.as_str()],
+            )
+            .map_err(db_err)?;
+        Ok(changed > 0)
+    }
 }
 
 fn map_fact_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<FactRow> {
@@ -362,5 +511,43 @@ mod tests {
         assert_eq!(node.fact.analyte, "ferritin");
         assert!(node.inputs.is_empty());
         assert!(db.lineage("lab_nonexistent", 4).unwrap().is_none());
+    }
+
+    #[test]
+    fn hypothesis_lifecycle() {
+        let db = Db::in_memory().unwrap();
+        let input = HypothesisRegisterInput {
+            statement: "Low free T is driven by elevated SHBG".into(),
+            fact_ids: vec!["lab_x".into()],
+            rule_ids: vec!["shbg_above_functional".into()],
+            pmids: vec![],
+            note: Some("check again after thyroid optimization".into()),
+            review_by: Some("2027-01-01".into()),
+        };
+        let id = db.add_hypothesis(&input).unwrap();
+        assert!(id.starts_with("hyp_"));
+        let all = db.hypotheses(None, 10).unwrap();
+        assert_eq!(all.len(), 1);
+        assert_eq!(all[0].status, HypothesisStatus::Open);
+        assert!(all[0].basis.is_some());
+        let open = db.hypotheses(Some(&HypothesisStatus::Open), 10).unwrap();
+        assert_eq!(open.len(), 1);
+        assert!(
+            db.hypotheses(Some(&HypothesisStatus::Refuted), 10)
+                .unwrap()
+                .is_empty()
+        );
+        assert!(
+            db.set_hypothesis_status(&id, HypothesisStatus::Supported)
+                .unwrap()
+        );
+        assert_eq!(
+            db.hypotheses(None, 10).unwrap()[0].status,
+            HypothesisStatus::Supported
+        );
+        assert!(
+            !db.set_hypothesis_status("hyp_missing", HypothesisStatus::Refuted)
+                .unwrap()
+        );
     }
 }

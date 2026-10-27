@@ -1,0 +1,116 @@
+[[rule]]
+id = "tt_below_population_male"
+description = "Total testosterone is below the population reference range. Worth a proper endocrine workup before any conclusions: repeat AM draw, free T, LH, FSH, prolactin."
+severity = "attention"
+conditions = [
+  { analyte = "testosterone_total", kind = "population", status = "below" }
+]
+suggests = ["shbg", "albumin", "lh", "fsh", "prolactin"]
+relates_to = ["testosterone_patterns"]
+source = "standard endocrine workup practice; confirm with repeat morning draw"
+confidence = "high"
+review_by = "2027-01-15"
+
+[[rule]]
+id = "tt_below_functional"
+description = "Total testosterone sits below the functional (optimal) range while inside the population range. Common pattern with fatigue/libido/skin complaints; investigate SHBG, thyroid, and nutritional cofactors before intervening."
+severity = "note"
+conditions = [
+  { analyte = "testosterone_total", kind = "functional", status = "below" }
+]
+suggests = ["shbg", "albumin", "tsh", "ferritin", "vitamin_d_25oh"]
+relates_to = ["testosterone_patterns"]
+source = "integrative endocrine seed; functional ranges are curation-tagged"
+confidence = "medium"
+review_by = "2026-12-01"
+
+[[rule]]
+id = "shbg_above_functional"
+description = "SHBG above the functional range can suppress free testosterone even when total testosterone looks normal. Thyroid status, estrogen, liver function and fiber intake influence SHBG."
+severity = "note"
+conditions = [
+  { analyte = "shbg", kind = "functional", status = "above" }
+]
+suggests = ["testosterone_total", "albumin", "tsh"]
+relates_to = ["testosterone_patterns", "thyroid_patterns"]
+source = "integrative endocrine seed"
+confidence = "medium"
+review_by = "2026-12-01"
+
+[[rule]]
+id = "tsh_above_functional"
+description = "TSH above the functional range though inside the lab range: a pattern integrative clinicians associate with suboptimal thyroid function. Evaluate free T3/T4, reverse T3, and thyroid antibodies before acting."
+severity = "note"
+conditions = [
+  { analyte = "tsh", kind = "functional", status = "above" }
+]
+suggests = ["free_t3", "free_t4", "reverse_t3", "tpo_antibodies"]
+relates_to = ["thyroid_patterns"]
+source = "integrative thyroid seed; contested vs standard endocrinology"
+confidence = "medium"
+review_by = "2026-12-01"
+
+[[rule]]
+id = "tsh_above_population"
+description = "TSH above the population reference range. Repeat to confirm, then evaluate free T4 and antibodies with a clinician."
+severity = "attention"
+conditions = [
+  { analyte = "tsh", kind = "population", status = "above" }
+]
+suggests = ["free_t4", "tpo_antibodies"]
+relates_to = ["thyroid_patterns"]
+source = "standard thyroid evaluation cascade"
+confidence = "high"
+review_by = "2027-01-15"
+
+[[rule]]
+id = "vitamin_d_below_population"
+description = "25-OH vitamin D below the sufficiency threshold. Correcting deficiency is foundational for immune and endocrine function."
+severity = "note"
+conditions = [
+  { analyte = "vitamin_d_25oh", kind = "population", status = "below" }
+]
+suggests = []
+relates_to = []
+source = "Endocrine Society sufficiency threshold"
+confidence = "medium"
+review_by = "2027-01-15"
+
+[[rule]]
+id = "insulin_above_functional"
+description = "Fasting insulin above the functional range: early insulin resistance signal, often years before glucose moves. Directly relevant to acne via IGF-1 and to testosterone via SHBG suppression."
+severity = "note"
+conditions = [
+  { analyte = "insulin", kind = "functional", status = "above" }
+]
+suggests = ["glucose", "homa_ir", "triglycerides", "hba1c"]
+relates_to = ["insulin_resistance_patterns", "acne_root_causes"]
+source = "integrative metabolic seed"
+confidence = "medium"
+review_by = "2026-12-01"
+
+[[rule]]
+id = "glucose_above_functional"
+description = "Fasting glucose above the functional range. Pattern together with elevated insulin suggests insulin resistance; consider HOMA-IR and a clinician-reviewed workup."
+severity = "attention"
+conditions = [
+  { analyte = "glucose", kind = "functional", status = "above" }
+]
+suggests = ["insulin", "homa_ir", "hba1c"]
+relates_to = ["insulin_resistance_patterns"]
+source = "integrative metabolic seed"
+confidence = "medium"
+review_by = "2026-12-01"
+
+[[rule]]
+id = "ferritin_below_functional"
+description = "Ferritin below the functional range: iron stores insufficient for optimal function (common with fatigue, hair, and thyroid conversion issues) though not anemia."
+severity = "note"
+conditions = [
+  { analyte = "ferritin", kind = "functional", status = "below" }
+]
+suggests = ["crp", "transferrin_saturation", "hemoglobin"]
+relates_to = ["iron_status_patterns"]
+source = "integrative iron optimization seed"
+confidence = "low"
+review_by = "2026-12-01"

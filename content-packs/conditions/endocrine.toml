@@ -1,0 +1,87 @@
+[[condition]]
+id = "testosterone_patterns"
+name = "Low Testosterone Patterns"
+aliases = ["low t", "hypogonadism", "testosterone"]
+summary = "Distinguish primary gonadal, secondary HPTA, SHBG-binding, and nutritional-cofactor causes before intervening. Total T alone is insufficient: free T (calculated), LH, FSH, prolactin, and thyroid context change the interpretation."
+mechanisms = [
+  "primary gonadal insufficiency (low T with elevated LH/FSH)",
+  "secondary HPTA suppression (low T with low/normal LH/FSH: sleep, stress, opioids, prior anabolic use)",
+  "SHBG elevation suppressing free fraction (thyroid, estrogen, liver)",
+  "nutritional cofactor deficiency (zinc, magnesium, vitamin D)",
+  "prolactin elevation suppressing GnRH"
+]
+biomarkers = ["testosterone_total", "shbg", "albumin", "free_testosterone_vermeulen", "lh", "fsh", "prolactin", "tsh", "ferritin", "vitamin_d_25oh"]
+notes = "Always interpret with age, time of draw (AM), and repeated measurement. Single low draws are unreliable."
+sources = ["endocrine workup standard practice", "integrative endocrine consensus (seed, requires curation)"]
+confidence = "medium"
+review_by = "2026-12-01"
+
+[[condition]]
+id = "thyroid_patterns"
+name = "Thyroid Function Patterns"
+aliases = ["hypothyroid", "thyroid", "hashimoto", "subclinical hypothyroidism"]
+summary = "TSH inside the lab range does not exclude suboptimal thyroid function. Evaluate the full axis: free T3, free T4, reverse T3, TPO antibodies. Selenium, iodine balance, iron status, and cortisol shape conversion."
+mechanisms = [
+  "autoimmune thyroiditis (TPO antibodies, early stage with normal TSH)",
+  "impaired peripheral T4 to T3 conversion (low selenium, high reverse T3, cortisol)",
+  "central dysregulation of the HPT axis",
+  "iodine deficiency or excess"
+]
+biomarkers = ["tsh", "free_t3", "free_t4", "reverse_t3", "tpo_antibodies", "ferritin", "selenium"]
+notes = "Functional TSH range (1.0-2.5) is contested territory; this card flags it honestly as integrative practice, not consensus."
+sources = ["integrative thyroid practice (seed, requires curation)", "standard endocrinology for cascade testing"]
+confidence = "medium"
+review_by = "2026-12-01"
+
+[[condition]]
+id = "insulin_resistance_patterns"
+name = "Insulin Resistance Patterns"
+aliases = ["insulin resistance", "hyperinsulinemia", "metabolic syndrome"]
+summary = "Fasting insulin rises years before glucose does. Hyperinsulinemia drives IGF-1 (acne), suppresses SHBG (freeing androgens), and shifts lipids. The earliest lever is dietary structure, not medication."
+mechanisms = [
+  "compensatory hyperinsulinemia with preserved glucose",
+  "hepatic glucose output dysregulation",
+  "adipose inflammation worsening insulin signaling",
+  "IGF-1 pathway activation (skin, keratinocytes, sebum)",
+  "SHBG suppression increasing free androgen fraction"
+]
+biomarkers = ["insulin", "glucose", "homa_ir", "hba1c", "triglycerides", "testosterone_total", "shbg"]
+notes = "HOMA-IR above roughly 2 is a common integrative threshold; standard medicine typically acts later."
+sources = ["Matthews 1985 HOMA model", "integrative metabolic practice (seed, requires curation)"]
+confidence = "medium"
+review_by = "2026-12-01"
+
+[[condition]]
+id = "iron_status_patterns"
+name = "Iron Status Patterns"
+aliases = ["iron", "ferritin", "anemia"]
+summary = "Ferritin is a storage marker and an acute-phase reactant: inflammation falsely elevates it. Optimal function generally needs stores well above the anemia threshold. Always pair with CRP and transferrin saturation."
+mechanisms = [
+  "depleted stores without anemia (fatigue, hair, thyroid conversion)",
+  "inflammation-masking (ferritin elevated by CRP, masking low iron)",
+  "absorption limits (gastric acid, celiac, H. pylori, phytate-heavy diet)",
+  "blood loss or heavy training losses"
+]
+biomarkers = ["ferritin", "crp", "transferrin_saturation", "hemoglobin"]
+notes = "Functional ferritin targets are integrative practice; confirm with saturation before supplementing."
+sources = ["integrative iron optimization (seed, requires curation)"]
+confidence = "low"
+review_by = "2026-12-01"
+
+[[condition]]
+id = "acne_root_causes"
+name = "Cystic Acne Root Causes"
+aliases = ["acne", "cystic acne", "skin"]
+summary = "Cystic acne is a systemic signal, not a skin-hygiene problem. The root-cause axes: androgen activity (free T via SHBG), insulin/IGF-1 (diet structure, dairy), gut-skin axis, fatty-acid balance, and keratinization. Topicals manage symptoms; the drivers are internal."
+mechanisms = [
+  "androgen-driven sebum production (free testosterone, DHT conversion in skin)",
+  "insulin/IGF-1 axis stimulation (high-glycemic load, whey and dairy protein)",
+  "gut-skin axis (dysbiosis, intestinal permeability driving systemic inflammation)",
+  "linoleic acid deficiency in sebum causing follicular hyperkeratinization",
+  "low-grade systemic inflammation impairing skin barrier repair"
+]
+biomarkers = ["testosterone_total", "shbg", "free_testosterone_vermeulen", "insulin", "glucose", "homa_ir", "igf_1", "dhea_s"]
+notes = "Diet-glycemic-load and dairy evidence is moderately strong; gut-skin axis evidence is emerging. Preview card: full curation in the skin content pack."
+sources = ["dietary glycemic load and acne RCTs (medium)", "gut-skin axis literature (emerging, tier C)"]
+confidence = "low"
+review_by = "2026-12-15"

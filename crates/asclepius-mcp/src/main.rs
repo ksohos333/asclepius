@@ -1,10 +1,16 @@
 use asclepius_core::analyte::AnalyteRegistry;
+use asclepius_core::conditions::{ConditionLibrary, ConditionQuery};
 use asclepius_core::derived::{FreeTInput, HomaInput, free_testosterone_vermeulen, homa_ir};
-use asclepius_core::panel::{AnalyteResult, normalize_panel};
-use asclepius_core::panel::{CommitInput, PanelInput, normalize_value};
+use asclepius_core::panel::{
+    AnalyteResult, CommitInput, PanelInput, normalize_panel, normalize_value,
+};
 use asclepius_core::profile::ProfileUpdate;
 use asclepius_core::range::RangeSet;
-use asclepius_core::store::{Db, HistoryQuery, LineageQuery};
+use asclepius_core::rules::{LatestValue, RuleSet, interpret};
+use asclepius_core::store::{
+    Db, HistoryQuery, HypothesisListInput, HypothesisRegisterInput, HypothesisUpdateInput,
+    LineageQuery,
+};
 use asclepius_core::{NAME, VERSION};
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::model::{CallToolResult, ContentBlock, Implementation, ServerCapabilities, ServerConfig};
@@ -17,6 +23,8 @@ use std::sync::Arc;
 struct Asclepius {
     registry: Arc<AnalyteRegistry>,
     ranges: Arc<RangeSet>,
+    rules: Arc<RuleSet>,
+    conditions: Arc<ConditionLibrary>,
     db: Arc<Db>,
 }
 
@@ -203,6 +211,143 @@ impl Asclepius {
     }
 
     #[tool(
+        description = "Interpret the latest committed labs against the rule base: fires severity-tagged findings with sources, computes calculated free testosterone when total T + SHBG exist, and proactively lists untested analytes the fired rules suggest investigating next. The root-cause workup engine; requires labs committed via lab_commit."
+    )]
+    fn interpret_panel(&self) -> Result<CallToolResult, McpError> {
+        let profile = self.db.profile().map_err(domain_error)?;
+        let facts = self.db.history(None, 1000).map_err(domain_error)?;
+        let mut latest: Vec<LatestValue> = Vec::new();
+        for fact in &facts {
+            let assessments =
+                self.ranges
+                    .assess(&fact.analyte, profile.sex, profile.age_years, fact.value);
+            if let Some(slot) = latest.iter_mut().find(|l| l.analyte == fact.analyte) {
+                slot.value = fact.value;
+                slot.assessments = assessments;
+            } else {
+                latest.push(LatestValue {
+                    analyte: fact.analyte.clone(),
+                    value: fact.value,
+                    assessments,
+                });
+            }
+        }
+        let interpretation = interpret(&self.rules, &latest);
+        let mut derived_candidates: Vec<serde_json::Value> = Vec::new();
+        let tt = latest.iter().find(|l| l.analyte == "testosterone_total");
+        let shbg = latest.iter().find(|l| l.analyte == "shbg");
+        let albumin = latest.iter().find(|l| l.analyte == "albumin");
+        if let (Some(tt), Some(shbg)) = (tt, shbg) {
+            let input = FreeTInput {
+                total_testosterone: tt.value,
+                total_testosterone_unit: Some("ng/dL".into()),
+                shbg: shbg.value,
+                shbg_unit: Some("nmol/L".into()),
+                albumin: albumin.map(|a| a.value),
+                albumin_unit: albumin.map(|_| "g/dL".into()),
+            };
+            if let Ok(derived) = free_testosterone_vermeulen(&self.registry, &input) {
+                if let Ok(v) = serde_json::to_value(&derived) {
+                    derived_candidates.push(v);
+                }
+            }
+        }
+        let glu = latest.iter().find(|l| l.analyte == "glucose");
+        let ins = latest.iter().find(|l| l.analyte == "insulin");
+        if let (Some(g), Some(i)) = (glu, ins) {
+            let input = HomaInput {
+                glucose: g.value,
+                glucose_unit: Some("mg/dL".into()),
+                insulin: i.value,
+                insulin_unit: Some("uU/mL".into()),
+            };
+            if let Ok(derived) = homa_ir(&self.registry, &input) {
+                if let Ok(v) = serde_json::to_value(&derived) {
+                    derived_candidates.push(v);
+                }
+            }
+        }
+        let payload = serde_json::json!({
+            "latest_values": latest,
+            "findings": interpretation.findings,
+            "untested_suggestions": interpretation.untested_suggestions,
+            "derived_candidates": derived_candidates,
+        });
+        Ok(CallToolResult::success(vec![json_content(payload)?]))
+    }
+
+    #[tool(
+        description = "Search the condition-card library (root-cause knowledge base): mechanisms, biomarkers, and honest evidence notes for patterns like low testosterone, thyroid dysfunction, insulin resistance, iron status, and cystic acne. Free-text query; returns scored matches."
+    )]
+    fn explore_condition(
+        &self,
+        Parameters(ConditionQuery { query, limit }): Parameters<ConditionQuery>,
+    ) -> Result<CallToolResult, McpError> {
+        let hits = self
+            .conditions
+            .search(&query, limit.unwrap_or(5).clamp(1, 20));
+        let payload = serde_json::json!({
+            "query": query,
+            "hits": hits,
+        });
+        Ok(CallToolResult::success(vec![json_content(payload)?]))
+    }
+
+    #[tool(
+        description = "Register a clinical hypothesis in the ledger, e.g. 'elevated SHBG is suppressing free T'. Hypotheses are model-inference by definition: they carry fact/rule/PMID references and a review date, and are explicitly labeled as non-facts until supported or refuted by evidence."
+    )]
+    fn hypothesis_register(
+        &self,
+        Parameters(input): Parameters<HypothesisRegisterInput>,
+    ) -> Result<CallToolResult, McpError> {
+        if input.statement.trim().is_empty() {
+            return Err(McpError::invalid_params("statement is required", None));
+        }
+        let id = self.db.add_hypothesis(&input).map_err(domain_error)?;
+        Ok(CallToolResult::success(vec![json_content(
+            serde_json::json!({ "id": id, "status": "open", "review_by": input.review_by }),
+        )?]))
+    }
+
+    #[tool(
+        description = "List ledger hypotheses, optionally filtered by status (open, supported, refuted, superseded), newest first."
+    )]
+    fn hypothesis_list(
+        &self,
+        Parameters(HypothesisListInput { status, limit }): Parameters<HypothesisListInput>,
+    ) -> Result<CallToolResult, McpError> {
+        let rows = self
+            .db
+            .hypotheses(status.as_ref(), limit.unwrap_or(20).clamp(1, 200))
+            .map_err(domain_error)?;
+        let payload = serde_json::to_value(&rows)
+            .map_err(|e| McpError::internal_error(e.to_string(), None))?;
+        Ok(CallToolResult::success(vec![json_content(payload)?]))
+    }
+
+    #[tool(
+        description = "Update a hypothesis status as evidence accumulates: open, supported, refuted, or superseded. The statement itself is immutable; the lifecycle is the point."
+    )]
+    fn hypothesis_update(
+        &self,
+        Parameters(HypothesisUpdateInput { id, status }): Parameters<HypothesisUpdateInput>,
+    ) -> Result<CallToolResult, McpError> {
+        let changed = self
+            .db
+            .set_hypothesis_status(&id, status)
+            .map_err(domain_error)?;
+        if !changed {
+            return Err(McpError::invalid_params(
+                format!("hypothesis not found: {id}"),
+                None,
+            ));
+        }
+        Ok(CallToolResult::success(vec![json_content(
+            serde_json::json!({ "id": id, "status": status.as_str() }),
+        )?]))
+    }
+
+    #[tool(
         description = "Validate, unit-convert, and range-assess a panel of lab values. Input: list of {analyte, value, unit?} where analyte accepts common names (e.g. 'total testosterone', 'TSH', 'ferritin') and unit is optional lab notation (e.g. 'nmol/L', 'ng/dL'). Returns per-analyte canonical values, plausibility checks, and both population and functional range assessments with sources. Does not persist; use for interpretation of raw values."
     )]
     fn lab_normalize(
@@ -273,19 +418,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let root = packs_root();
     let registry = AnalyteRegistry::load_dir(&root.join("analytes"))?;
     let ranges = RangeSet::load_dir(&root.join("ranges"), &registry)?;
+    let rules = RuleSet::load_dir(&root.join("rules"), &registry)?;
+    let conditions = ConditionLibrary::load_dir(&root.join("conditions"))?;
     let db_path = data_home().join("asclepius.db");
     let db = Db::open(&db_path)?;
     eprintln!(
-        "asclepius {} serving: {} analytes, {} ranges from {} | ledger {}",
+        "asclepius {} serving: {} analytes, {} ranges, {} rules, {} condition cards from {} | ledger {}",
         VERSION,
         registry.all().len(),
         ranges.len(),
+        rules.len(),
+        conditions.all().len(),
         root.display(),
         db_path.display()
     );
     let doctor = Asclepius {
         registry: Arc::new(registry),
         ranges: Arc::new(ranges),
+        rules: Arc::new(rules),
+        conditions: Arc::new(conditions),
         db: Arc::new(db),
     };
     let service = doctor
