@@ -1,0 +1,16 @@
+[package]
+name = "asclepius-core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Deterministic medical core for the Asclepius physician MCP"
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+schemars.workspace = true
+thiserror.workspace = true
+toml.workspace = true
+rusqlite = { version = "0.40.2", features = ["bundled"] }
+uuid = { version = "1.26.1", features = ["v4"] }

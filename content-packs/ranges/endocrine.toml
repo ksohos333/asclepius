@@ -1,0 +1,147 @@
+[[range]]
+analyte = "testosterone_total"
+kind = "population"
+sex = "male"
+age_min = 19
+age_max = 39
+low = 264.0
+high = 916.0
+unit = "ng_dl"
+source = "Bhasin et al., JCEM 2011, healthy nonobese young men"
+confidence = "medium"
+review_by = "2027-01-15"
+
+[[range]]
+analyte = "testosterone_total"
+kind = "functional"
+sex = "male"
+age_min = 19
+age_max = 65
+low = 450.0
+high = 900.0
+unit = "ng_dl"
+source = "integrative endocrine seed range, requires curation"
+confidence = "low"
+review_by = "2026-12-01"
+
+[[range]]
+analyte = "shbg"
+kind = "population"
+low = 10.0
+high = 57.0
+unit = "nmol_l"
+source = "typical adult lab reference interval"
+confidence = "medium"
+review_by = "2027-01-15"
+
+[[range]]
+analyte = "albumin"
+kind = "population"
+low = 3.5
+high = 5.2
+unit = "g_dl"
+source = "typical adult lab reference interval"
+confidence = "high"
+review_by = "2027-01-15"
+
+[[range]]
+analyte = "tsh"
+kind = "population"
+low = 0.4
+high = 4.5
+unit = "miu_l"
+source = "classic population lab range"
+confidence = "high"
+review_by = "2027-01-15"
+
+[[range]]
+analyte = "tsh"
+kind = "functional"
+low = 1.0
+high = 2.5
+unit = "miu_l"
+source = "integrative thyroid seed range, requires curation"
+confidence = "medium"
+review_by = "2026-12-01"
+
+[[range]]
+analyte = "glucose"
+kind = "population"
+low = 70.0
+high = 100.0
+unit = "mg_dl"
+source = "fasting plasma glucose, ADA lab range"
+confidence = "high"
+review_by = "2027-01-15"
+
+[[range]]
+analyte = "glucose"
+kind = "functional"
+low = 70.0
+high = 90.0
+unit = "mg_dl"
+source = "integrative fasting glucose target, requires curation"
+confidence = "medium"
+review_by = "2026-12-01"
+
+[[range]]
+analyte = "insulin"
+kind = "population"
+low = 2.6
+high = 24.9
+unit = "uu_ml"
+source = "typical fasting insulin lab interval"
+confidence = "medium"
+review_by = "2027-01-15"
+
+[[range]]
+analyte = "insulin"
+kind = "functional"
+low = 2.0
+high = 10.0
+unit = "uu_ml"
+source = "integrative fasting insulin target, requires curation"
+confidence = "medium"
+review_by = "2026-12-01"
+
+[[range]]
+analyte = "vitamin_d_25oh"
+kind = "population"
+low = 30.0
+high = 100.0
+unit = "ng_ml"
+source = "sufficiency threshold per Endocrine Society guidance"
+confidence = "medium"
+review_by = "2027-01-15"
+
+[[range]]
+analyte = "vitamin_d_25oh"
+kind = "functional"
+low = 40.0
+high = 60.0
+unit = "ng_ml"
+source = "integrative vitamin D target, requires curation"
+confidence = "medium"
+review_by = "2026-12-01"
+
+[[range]]
+analyte = "ferritin"
+kind = "population"
+sex = "male"
+low = 30.0
+high = 400.0
+unit = "ng_ml"
+source = "typical adult male lab interval"
+confidence = "medium"
+review_by = "2027-01-15"
+
+[[range]]
+analyte = "ferritin"
+kind = "functional"
+sex = "male"
+low = 70.0
+high = 180.0
+unit = "ng_ml"
+source = "integrative iron optimization seed, requires curation"
+confidence = "low"
+review_by = "2026-12-01"

@@ -1,0 +1,66 @@
+[[analyte]]
+id = "testosterone_total"
+name = "Total Testosterone"
+aliases = ["testosterone", "total t", "testosterone, total", "serum testosterone", "t total"]
+molar_mass = 288.42
+canonical_unit = "ng_dl"
+plausible_min = 20.0
+plausible_max = 2000.0
+
+[[analyte]]
+id = "shbg"
+name = "Sex Hormone Binding Globulin"
+aliases = ["sex hormone binding globulin", "testosterone estrogen binding globulin", "tebg"]
+canonical_unit = "nmol_l"
+plausible_min = 1.0
+plausible_max = 300.0
+
+[[analyte]]
+id = "albumin"
+name = "Albumin"
+aliases = ["albumin, serum", "serum albumin", "alb"]
+canonical_unit = "g_dl"
+plausible_min = 1.0
+plausible_max = 6.5
+
+[[analyte]]
+id = "tsh"
+name = "Thyroid Stimulating Hormone"
+aliases = ["thyrotropin", "tsh, serum", "thyroid stimulating hormone"]
+canonical_unit = "miu_l"
+plausible_min = 0.01
+plausible_max = 100.0
+
+[[analyte]]
+id = "glucose"
+name = "Glucose"
+aliases = ["glucose fasting", "fasting glucose", "glu", "fbg", "glucose, serum"]
+molar_mass = 180.156
+canonical_unit = "mg_dl"
+plausible_min = 30.0
+plausible_max = 600.0
+
+[[analyte]]
+id = "insulin"
+name = "Insulin"
+aliases = ["fasting insulin", "insulin fasting", "insulin, serum"]
+canonical_unit = "uu_ml"
+plausible_min = 0.1
+plausible_max = 300.0
+
+[[analyte]]
+id = "vitamin_d_25oh"
+name = "25-Hydroxy Vitamin D"
+aliases = ["vitamin d", "25-hydroxyvitamin d", "25-oh vitamin d", "calcifediol", "25 oh d"]
+molar_mass = 400.64
+canonical_unit = "ng_ml"
+plausible_min = 1.0
+plausible_max = 200.0
+
+[[analyte]]
+id = "ferritin"
+name = "Ferritin"
+aliases = ["ferritin, serum", "ferr"]
+canonical_unit = "ng_ml"
+plausible_min = 1.0
+plausible_max = 10000.0

@@ -1,0 +1,21 @@
+[workspace]
+resolver = "2"
+members = ["crates/asclepius-core", "crates/asclepius-mcp"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+license = "MIT"
+
+[workspace.dependencies]
+asclepius-core = { path = "crates/asclepius-core" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+schemars = "1"
+thiserror = "2"
+toml = "0.9"
+
+[profile.release]
+lto = "thin"
+strip = true
