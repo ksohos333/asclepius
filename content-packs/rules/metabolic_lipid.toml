@@ -1,0 +1,64 @@
+[[rule]]
+id = "ldl_above_population_young_male"
+description = "LDL cholesterol in the high band (160-189+) at a young age. With low triglycerides and good glycemia this is a lean-pattern hypercholesterolemia picture; familial hypercholesterolemia becomes a genuine consideration. Family history, repeat panel, and Lp(a) once; physician involvement for the lipid plan."
+severity = "attention"
+conditions = [
+  { analyte = "ldl_c", kind = "population", status = "above" }
+]
+suggests = ["total_cholesterol", "hdl_c", "triglycerides"]
+relates_to = ["atherogenic_lipid_patterns"]
+source = "ESC/EAS lipid guidance; FH diagnostic criteria (LDL thresholds by age)"
+confidence = "high"
+review_by = "2027-01-15"
+
+[[rule]]
+id = "ldl_above_functional_young_male"
+description = "LDL above the optimal lifetime-risk band though within lab 'acceptable'. First lever is dietary pattern (saturated fat swap, soluble fiber), then re-evaluate."
+severity = "note"
+conditions = [
+  { analyte = "ldl_c", kind = "functional", status = "above" }
+]
+suggests = ["total_cholesterol", "hdl_c"]
+relates_to = ["atherogenic_lipid_patterns"]
+source = "ESC/EAS lifestyle guidance"
+confidence = "medium"
+review_by = "2027-01-15"
+
+[[rule]]
+id = "total_cholesterol_above_population"
+description = "Total cholesterol above the desirable band. Interpret as the composite it is: with low TG and good HDL the driver is LDL."
+severity = "note"
+conditions = [
+  { analyte = "total_cholesterol", kind = "population", status = "above" }
+]
+suggests = ["ldl_c", "hdl_c", "triglycerides"]
+relates_to = ["atherogenic_lipid_patterns"]
+source = "typical lab interpretation bands"
+confidence = "medium"
+review_by = "2027-01-15"
+
+[[rule]]
+id = "folate_below_functional"
+description = "Serum folate in the intermediate band: not deficient, short of optimal. Folate is a methyl donor; given methylation-agent history (SAM-e), supporting the folate/B12 axis through diet (leafy greens, legumes) is the gentle route."
+severity = "note"
+conditions = [
+  { analyte = "folate", kind = "functional", status = "below" }
+]
+suggests = ["vitamin_b12", "homocysteine"]
+relates_to = ["pssd"]
+source = "lab optimal bands; one-carbon metabolism literature"
+confidence = "medium"
+review_by = "2027-01-15"
+
+[[rule]]
+id = "shbg_above_population_male"
+description = "SHBG above the population range. Elevates with thyroid excess, estrogen, liver factors, fiber-heavy diets, and low insulin. Even at high-normal total testosterone it compresses the free fraction. Verify draw conditions and interpret with free T."
+severity = "note"
+conditions = [
+  { analyte = "shbg", kind = "population", status = "above" }
+]
+suggests = ["testosterone_total", "albumin", "tsh", "estradiol"]
+relates_to = ["testosterone_patterns"]
+source = "standard endocrine interpretation of SHBG determinants"
+confidence = "high"
+review_by = "2027-01-15"

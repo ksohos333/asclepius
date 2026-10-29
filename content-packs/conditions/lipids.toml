@@ -1,0 +1,28 @@
+[[condition]]
+id = "atherogenic_lipid_patterns"
+name = "Atherogenic Lipid Patterns in the Young"
+aliases = ["high cholesterol", "ldl", "hypercholesterolemia", "familial hypercholesterolemia"]
+summary = "Elevated LDL at a young age, especially with low triglycerides, high HDL, and excellent glycemia, is not a metabolic-syndrome picture: it points at LDL-clearance genetics (familial hypercholesterolemia spectrum) or dietary saturated-fat load. Cardiovascular prevention is root-cause medicine: the atherosclerosis clock starts early, and LDL years-of-exposure is the metric that matters."
+mechanisms = [
+  "LDL-receptor clearance genetics: familial hypercholesterolemia spectrum (untreated LDL >=190 in adults, or >=160 in the young with family history, raises suspicion; tier A criteria)",
+  "saturated-fat-driven LDL particle number and ApoB overproduction (tier A dietary trials)",
+  "thyroid hypofunction raising LDL (rule out with TSH; here usually normal)",
+  "Lp(a) as an independent, genetically-set risk enhancer worth measuring once in a lifetime (tier B)"
+]
+biomarkers = ["ldl_c", "total_cholesterol", "hdl_c", "triglycerides", "hba1c", "crp", "tsh"]
+notes = "At age 23 with LDL >=160 mg/dL and low TG: check family history of early cardiovascular disease, repeat the panel, measure Lp(a) once, and build the dietary pattern first (saturated fat swapped for unsaturated, soluble fiber, plant sterols). Statin decisions belong with a physician; the FH question deserves that conversation."
+sources = ["ESC/EAS dyslipidaemia guidelines", "familial hypercholesterolemia diagnostic criteria (Dutch Lipid Clinic / DLCN)", "Lp(a) risk-enhancer guidance"]
+confidence = "medium"
+review_by = "2027-01-15"
+
+[[intervention]]
+id = "mediterranean_pattern"
+name = "Mediterranean Dietary Pattern"
+category = "diet"
+tier = "A"
+summary = "The best-evidenced dietary pattern for cardiovascular risk reduction: unsaturated fats (olive oil, nuts) replacing saturated fat, legumes, fish, vegetables, fruit, whole grains. Expected LDL reduction of roughly 10-15% in motivated adherence; also anti-inflammatory and skin-friendly."
+dosing = [{ form = "dietary pattern", min = 8, max = 12, unit = "weeks trial", notes = "swap saturated fat for olive oil/nuts/legumes; retest lipids after 8-12 weeks" }]
+targets = ["atherogenic_lipid_patterns", "acne_root_causes"]
+sources = ["PREDIMED trial and successors", "ESC/EAS lifestyle guidance"]
+confidence = "high"
+review_by = "2027-01-15"

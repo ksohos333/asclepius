@@ -13,6 +13,8 @@ pub enum Unit {
     UgDl,
     #[serde(rename = "ug_ml")]
     UgMl,
+    #[serde(rename = "mg_l")]
+    MgL,
     #[serde(rename = "mg_dl")]
     MgDl,
     #[serde(rename = "g_dl")]
@@ -64,6 +66,7 @@ impl Unit {
             | Unit::PgMl
             | Unit::UgDl
             | Unit::UgMl
+            | Unit::MgL
             | Unit::MgDl
             | Unit::GDl
             | Unit::GL => Dimension::Mass,
@@ -81,6 +84,7 @@ impl Unit {
             Unit::PgMl => 0.001,
             Unit::UgDl => 10.0,
             Unit::UgMl => 1000.0,
+            Unit::MgL => 1000.0,
             Unit::MgDl => 10000.0,
             Unit::GDl => 1e7,
             Unit::GL => 1e6,
@@ -103,6 +107,7 @@ impl Unit {
             Unit::PgMl => "pg/mL",
             Unit::UgDl => "ug/dL",
             Unit::UgMl => "ug/mL",
+            Unit::MgL => "mg/L",
             Unit::MgDl => "mg/dL",
             Unit::GDl => "g/dL",
             Unit::GL => "g/L",
@@ -137,6 +142,7 @@ impl Unit {
             "pgml" | "pgml1000" => Some(Unit::PgMl),
             "ugdl" => Some(Unit::UgDl),
             "ugml" => Some(Unit::UgMl),
+            "mgl" => Some(Unit::MgL),
             "mgdl" => Some(Unit::MgDl),
             "gdl" => Some(Unit::GDl),
             "gl" => Some(Unit::GL),
@@ -144,7 +150,7 @@ impl Unit {
             "pmoll" | "pmol" => Some(Unit::PmolL),
             "umoll" | "umol" => Some(Unit::UmolL),
             "mmoll" | "mmol" => Some(Unit::MmolL),
-            "miul" | "miu" => Some(Unit::MIuL),
+            "miul" | "miu" | "miuml" => Some(Unit::MIuL),
             "uuml" | "uiuml" | "uu" => Some(Unit::UuMl),
             "iul" | "ul" => Some(Unit::IuL),
             "percent" | "%" => Some(Unit::Percent),

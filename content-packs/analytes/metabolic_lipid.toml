@@ -1,0 +1,95 @@
+[[analyte]]
+id = "folate"
+name = "Folate (Serum)"
+aliases = ["folic acid", "vitamin b9", "φυλλικό οξύ", "folate, serum"]
+canonical_unit = "ng_ml"
+plausible_min = 0.5
+plausible_max = 60.0
+
+[[analyte]]
+id = "vitamin_b12"
+name = "Vitamin B12"
+aliases = ["b12", "cobalamin", "cobalamin, serum"]
+canonical_unit = "pg_ml"
+plausible_min = 80.0
+plausible_max = 2000.0
+
+[[analyte]]
+id = "total_cholesterol"
+name = "Total Cholesterol"
+aliases = ["cholesterol", "tc", "χοληστερόλη"]
+canonical_unit = "mg_dl"
+plausible_min = 80.0
+plausible_max = 600.0
+
+[[analyte]]
+id = "ldl_c"
+name = "LDL Cholesterol"
+aliases = ["ldl", "low density lipoprotein", "ldl-c"]
+canonical_unit = "mg_dl"
+plausible_min = 30.0
+plausible_max = 400.0
+
+[[analyte]]
+id = "hdl_c"
+name = "HDL Cholesterol"
+aliases = ["hdl", "high density lipoprotein", "hdl-c"]
+canonical_unit = "mg_dl"
+plausible_min = 15.0
+plausible_max = 120.0
+
+[[analyte]]
+id = "triglycerides"
+name = "Triglycerides"
+aliases = ["trig", "tg", "τριγλυκερίδια"]
+canonical_unit = "mg_dl"
+plausible_min = 25.0
+plausible_max = 1500.0
+
+[[analyte]]
+id = "hba1c"
+name = "Glycated Hemoglobin (HbA1c)"
+aliases = ["hba1c", "a1c", "glycated hemoglobin"]
+canonical_unit = "percent"
+plausible_min = 3.5
+plausible_max = 18.0
+
+[[analyte]]
+id = "crp"
+name = "C-Reactive Protein (CRP)"
+aliases = ["c-reactive protein", "c reactive protein", "crp, high sensitivity"]
+canonical_unit = "mg_l"
+plausible_min = 0.05
+plausible_max = 300.0
+
+[[analyte]]
+id = "psa_total"
+name = "Prostate-Specific Antigen (Total)"
+aliases = ["psa", "prostate specific antigen"]
+canonical_unit = "ng_ml"
+plausible_min = 0.01
+plausible_max = 100.0
+
+[[analyte]]
+id = "hematocrit"
+name = "Hematocrit"
+aliases = ["hct", "packed cell volume"]
+canonical_unit = "percent"
+plausible_min = 20.0
+plausible_max = 65.0
+
+[[analyte]]
+id = "serum_iron"
+name = "Serum Iron"
+aliases = ["iron", "fe", "σίδηρος"]
+canonical_unit = "ug_dl"
+plausible_min = 10.0
+plausible_max = 400.0
+
+[[analyte]]
+id = "homa_ir"
+name = "HOMA-IR"
+aliases = ["homa", "insulin resistance index"]
+canonical_unit = "ratio"
+plausible_min = 0.1
+plausible_max = 50.0
