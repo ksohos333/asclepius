@@ -6,7 +6,7 @@ summary = "Cystic acne is a systemic signal, not a skin-hygiene problem. Five ro
 mechanisms = [
   "androgen-driven sebum production: free testosterone and 5-alpha-reductase (DHT) activity in sebaceous glands; low SHBG raises the free androgen fraction (tier B)",
   "insulin/IGF-1 axis: high-glycemic diets and whey/dairy protein raise insulin and IGF-1, stimulating sebum and keratinocyte proliferation (tier B, RCTs on glycemic load)",
-  "gut-skin axis: intestinal dysbiosis and permeability associated with skin inflammation (tier C, emerging)",
+  "gut-skin axis: intestinal dysbiosis and permeability associated with skin inflammation (tier C, emerging); oral multispecies probiotics show small RCT signal for acne (tier C) — strain specification and CFU disclosure matter when choosing a product",
   "sebum linoleic acid deficiency promoting follicular hyperkeratinization and comedone formation (tier C)",
   "low-grade systemic inflammation impairing barrier repair and prolonging lesions (tier C)"
 ]

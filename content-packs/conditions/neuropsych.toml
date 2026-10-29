@@ -1,8 +1,8 @@
 [[condition]]
 id = "pssd"
 name = "Post-SSRI Sexual Dysfunction (PSSD)"
-aliases = ["pssd", "post-ssri", "post ssri sexual dysfunction", "ssri sexual dysfunction persistent"]
-summary = "Persistent sexual dysfunction — low libido, genital numbness, erectile/arousal impairment, pleasureless or absent orgasm — continuing for months to years after SSRI (and some SNRI) discontinuation, in the absence of other causes. Not recognized in the DSM; documented through case series, pharmacovigilance signals, and growing mechanistic literature. Diagnosis is one of exclusion: hypogonadism, hyperprolactinemia, thyroid disease, depression residua, and relationship factors must be ruled out first."
+aliases = ["pssd", "post-ssri", "post ssri sexual dysfunction", "ssri sexual dysfunction persistent", "post antipsychotic sexual dysfunction", "sam-e sexual dysfunction"]
+summary = "Persistent sexual dysfunction — low libido, genital numbness, erectile/arousal impairment, pleasureless or absent orgasm — continuing for months to years after serotonergic or antidopaminergic drug exposure, in the absence of other causes. Documented after SSRIs/SNRIs, and in case reports after antipsychotics (e.g. quetiapine) and the methyl donor SAM-e; some cases report layered triggers (e.g. partial recovery, then a second serotonergic or methylation-active agent resetting the injury). Not recognized in the DSM; documented through case series, pharmacovigilance signals, and mechanistic literature. Diagnosis is one of exclusion: hypogonadism, hyperprolactinemia, thyroid disease, depression residua, and relationship factors must be ruled out first."
 mechanisms = [
   "persistent 5-HT1A receptor desensitization and downstream dopaminergic blunting (mechanistic, tier C)",
   "altered neurosteroidogenesis: reduced allopregnanolone via 5-alpha reductase pathway changes (mechanistic, tier C)",
@@ -11,7 +11,7 @@ mechanisms = [
   "androgen receptor downregulation hypotheses (case-report derived, tier D)"
 ]
 biomarkers = ["testosterone_total", "free_testosterone_vermeulen", "shbg", "prolactin", "estradiol", "lh", "fsh", "tsh", "vitamin_d_25oh"]
-notes = "No validated diagnostic biomarker exists. The correct first move is a full differential workup: this system's rules fire on the treatable mimics (low testosterone, high prolactin, thyroid dysfunction). Much of the literature is case series and pharmacovigilance: read every claim with its tier. Avoid stacking serotonergic interventions during recovery; see the avoid_serotonergic_load card."
+notes = "No validated diagnostic biomarker exists. The correct first move is a full differential workup: this system's rules fire on the treatable mimics (low testosterone, high prolactin, thyroid dysfunction). Much of the literature is case series and pharmacovigilance: read every claim with its tier. Avoid stacking serotonergic interventions during recovery; see the avoid_serotonergic_load card. Case-reported trigger pattern worth honoring: serotonergic or methyl-donor agents (SAM-e, St. John's Wort, 5-HTP, high-dose tryptophan loads) taken during incomplete recovery have reset or deepened the syndrome in patient reports (tier D) — the working rule is to change one variable at a time, gently, and track sensation and mood response. Serotonergic botanicals that individuals tolerate well (e.g. saffron, patient-reported) are a genuine gray zone: document response rather than assume harm."
 sources = ["Hogan, Le Noury, Healy et al., case series and policy analysis on post-SSRI sexual dysfunction (2019)", "Bahrick, post-SSRI sexual dysfunction case reports", "pharmacovigilance disproportionality analyses (EMA PRAC reviews of SSRI sexual ADRs)", "patient-community documentation (classified tier D)"]
 confidence = "low"
 review_by = "2026-12-15"

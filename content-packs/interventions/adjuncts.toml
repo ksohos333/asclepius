@@ -1,0 +1,41 @@
+[[intervention]]
+id = "sam_e"
+name = "SAM-e (S-Adenosylmethionine)"
+category = "nutrient"
+tier = "B"
+summary = "Methyl donor with real antidepressant evidence. Documented in patient reports to trigger or deepen post-drug sexual dysfunction during incomplete recovery — both serotonergic activity and epigenetic methylation are mechanistically implicated in PSSD hypotheses. Present in this library for safety documentation, never proposed."
+dosing = [{ form = "not recommended in post-drug recovery contexts", min = 0, max = 0, unit = "n/a", notes = "do not self-administer in PSSD/PAWS contexts" }]
+classes = ["serotonergic", "methyl_donor"]
+contraindicated_if = ["pssd", "post-ssri sexual dysfunction", "paws"]
+interactions = [{ with = "serotonergic", effect = "additive serotonergic activity; case-reported trigger of sensory loss in recovery", severity = "avoid" }]
+targets = []
+sources = ["SAM-e antidepressant RCT literature", "patient-community documentation of SAM-e-triggered setbacks (tier D)", "epigenetic methylation hypotheses of PSSD (tier C)"]
+confidence = "low"
+review_by = "2026-12-15"
+
+[[intervention]]
+id = "saffron"
+name = "Saffron (Crocus sativus, standardized extract)"
+category = "botanical"
+tier = "B"
+summary = "Documented serotonergic activity with RCTs comparing it to fluoxetine for mood. A genuine gray zone in PSSD recovery: mechanistically it loads the serotonergic system the literature implicates, yet some individuals report stable benefit without setbacks during recovery. If used: fixed modest dose, one change at a time, tracked sensation and mood response, stop if sensation regresses."
+dosing = [{ form = "standardized extract", min = 28, max = 100, unit = "mg/day", notes = "mood RCTs typically 28-30 mg; higher doses are patient-directed" }]
+classes = ["serotonergic"]
+interactions = [{ with = "serotonergic", effect = "additive serotonergic burden — relevant in post-SSRI contexts", severity = "caution" }]
+targets = []
+sources = ["saffron vs fluoxetine mood RCTs", "saffron serotonergic mechanism studies", "patient-community reports of tolerance during recovery (tier D)"]
+confidence = "low"
+review_by = "2026-12-15"
+
+[[intervention]]
+id = "multispecies_probiotic_skin"
+name = "Multispecies Probiotic (skin-formulated)"
+category = "nutrient"
+tier = "C"
+summary = "Oral multispecies probiotics have small-RCT signal for acne via the gut-skin axis. Product quality markers that matter: named strains (not species alone), declared CFU at end of shelf life, and attention to co-formulated actives (zinc, vitamin D) that stack with existing supplementation. No product-level serotonergic evidence; species-level tryptophan-metabolism literature exists but cannot be attributed to products that do not declare strains."
+dosing = [{ form = "capsules as labelled", min = 1, max = 2, unit = "capsules/day", notes = "check label for zinc and vitamin D content to avoid stacking; separate from medications by 1-2 hours if the product contains glucomannan or similar fiber" }]
+ceiling = { amount = 25, unit = "mg/day total supplemental zinc from all sources", reason = "EFSA tolerable upper intake for zinc; chronic excess depletes copper" }
+targets = ["acne_root_causes"]
+sources = ["oral probiotics and acne small RCTs (tier C)", "EFSA zinc upper intake guidance", "gut-brain tryptophan metabolism literature (species-level, not product-attributable)"]
+confidence = "low"
+review_by = "2026-12-15"

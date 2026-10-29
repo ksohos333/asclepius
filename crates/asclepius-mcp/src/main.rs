@@ -305,12 +305,13 @@ impl Asclepius {
         &self,
         Parameters(ConditionQuery { query, limit }): Parameters<ConditionQuery>,
     ) -> Result<CallToolResult, McpError> {
-        let hits = self
-            .conditions
-            .search(&query, limit.unwrap_or(5).clamp(1, 20));
+        let limit = limit.unwrap_or(5).clamp(1, 20);
+        let condition_hits = self.conditions.search(&query, limit);
+        let intervention_hits = self.interventions.search(&query, limit);
         let payload = serde_json::json!({
             "query": query,
-            "hits": hits,
+            "condition_hits": condition_hits,
+            "intervention_hits": intervention_hits,
         });
         Ok(CallToolResult::success(vec![json_content(payload)?]))
     }

@@ -163,6 +163,66 @@ impl InterventionLibrary {
 }
 
 #[derive(Debug, Clone, Serialize)]
+pub struct InterventionHit {
+    pub score: u32,
+    #[serde(flatten)]
+    pub card: InterventionCard,
+}
+
+impl InterventionLibrary {
+    pub fn search(&self, query: &str, limit: usize) -> Vec<InterventionHit> {
+        let tokens: Vec<String> = query
+            .to_lowercase()
+            .split(|c: char| !c.is_ascii_alphanumeric())
+            .filter(|t| t.len() > 1)
+            .map(|t| t.to_string())
+            .collect();
+        if tokens.is_empty() {
+            return Vec::new();
+        }
+        let mut hits: Vec<InterventionHit> = self
+            .cards
+            .iter()
+            .filter_map(|card| {
+                let name = card.name.to_lowercase();
+                let mut score = 0u32;
+                for token in &tokens {
+                    if card.id.to_lowercase() == *token || name == *token {
+                        score += 10;
+                    } else if name.contains(token.as_str()) {
+                        score += 6;
+                    }
+                    if card
+                        .classes
+                        .iter()
+                        .any(|c| c.to_lowercase().contains(token.as_str()))
+                    {
+                        score += 4;
+                    }
+                    if card.summary.to_lowercase().contains(token.as_str()) {
+                        score += 1;
+                    }
+                    if card
+                        .sources
+                        .iter()
+                        .any(|s| s.to_lowercase().contains(token.as_str()))
+                    {
+                        score += 2;
+                    }
+                }
+                (score > 0).then(|| InterventionHit {
+                    score,
+                    card: card.clone(),
+                })
+            })
+            .collect();
+        hits.sort_by(|a, b| b.score.cmp(&a.score).then_with(|| a.card.id.cmp(&b.card.id)));
+        hits.truncate(limit);
+        hits
+    }
+}
+
+#[derive(Debug, Clone, Serialize)]
 pub struct ProposalItem {
     pub id: String,
     pub name: String,
