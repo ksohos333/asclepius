@@ -1,0 +1,29 @@
+[[intervention]]
+id = "berberine"
+name = "Berberine"
+category = "botanical"
+tier = "B"
+summary = "Plant alkaloid with real metabolic evidence (glucose, lipids) — and broad-spectrum ANTIMICROBIAL activity that profoundly disrupts gut flora, plus CYP3A4/P-gp inhibition and MAO-related activity. Community crash reports in post-drug sexual dysfunction (tier D) name berberine specifically and repeatedly. Mechanism class: gut microbiome destruction — the body's largest tryptophan reservoir. Present for safety documentation only; never proposed."
+dosing = [{ form = "not for use in post-drug recovery contexts", min = 0, max = 0, unit = "n/a", notes = "contraindicated in PSSD/PAWS populations" }]
+classes = ["antimicrobial_gut", "cyp3a4_inhibitor"]
+contraindicated_if = ["pssd", "post-ssri sexual dysfunction", "paws"]
+interactions = [{ with = "any", effect = "gut flora disruption with delayed, hard-to-attribute onset; community-reported prolonged crashes", severity = "avoid" }]
+targets = []
+sources = ["berberine metabolic RCT literature", "berberine antimicrobial/gut-microbiome studies", "community crash reports in post-drug syndromes (tier D)"]
+confidence = "low"
+review_by = "2027-01-15"
+
+[[intervention]]
+id = "oregano_oil"
+name = "Oregano Oil (carvacrol/thymol)"
+category = "botanical"
+tier = "C"
+summary = "One of the strongest herbal broad-spectrum antimicrobials/antifungals — used in SIBO and Candida protocols as a 'natural antibiotic' alongside or instead of rifaximin-class agents. Mechanism class identical to the gut-bombing agents implicated in post-drug crashes: kills gut flora broadly. No product-level crash data, but mechanism-class caution is decisive for post-drug recovery populations. Present for safety documentation only; never proposed."
+dosing = [{ form = "not for use in post-drug recovery contexts", min = 0, max = 0, unit = "n/a", notes = "contraindicated in PSSD/PAWS populations by mechanism class" }]
+classes = ["antimicrobial_gut"]
+contraindicated_if = ["pssd", "post-ssri sexual dysfunction", "paws"]
+interactions = [{ with = "any", effect = "broad gut flora destruction; delayed hard-to-attribute onset", severity = "avoid" }]
+targets = []
+sources = ["carvacrol/thymol antimicrobial literature", "SIBO/Candida protocol usage documentation", "mechanism-class reasoning from community crash pattern (tier D)"]
+confidence = "low"
+review_by = "2027-01-15"
