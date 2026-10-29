@@ -18,8 +18,8 @@ id = "saffron"
 name = "Saffron (Crocus sativus, standardized extract)"
 category = "botanical"
 tier = "B"
-summary = "Documented serotonergic activity with RCTs comparing it to fluoxetine for mood. A genuine gray zone in PSSD recovery: mechanistically it loads the serotonergic system the literature implicates, yet some individuals report stable benefit without setbacks during recovery. If used: fixed modest dose, one change at a time, tracked sensation and mood response, stop if sensation regresses."
-dosing = [{ form = "standardized extract", min = 28, max = 100, unit = "mg/day", notes = "mood RCTs typically 28-30 mg; higher doses are patient-directed" }]
+summary = "Documented serotonergic activity with RCTs comparing it to fluoxetine for mood. A genuine gray zone in PSSD recovery: mechanistically it loads the serotonergic system the literature implicates, yet some individuals report stable multi-domain benefit without setbacks during recovery — one documented case (tier D) reports benefit for erectile function, mood, energy, and cold/immunity resistance at 100 mg/day through late recovery. If used: fixed modest dose, one change at a time, tracked sensation and mood response, stop if sensation regresses."
+dosing = [{ form = "standardized extract", min = 28, max = 100, unit = "mg/day", notes = "mood RCTs typically 28-30 mg; higher doses are patient-directed; multi-domain benefit documented at 100 mg in one recovery case" }]
 classes = ["serotonergic"]
 interactions = [{ with = "serotonergic", effect = "additive serotonergic burden — relevant in post-SSRI contexts", severity = "caution" }]
 targets = []
