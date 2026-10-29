@@ -87,6 +87,14 @@ plausible_min = 10.0
 plausible_max = 400.0
 
 [[analyte]]
+id = "igf_1"
+name = "Insulin-like Growth Factor 1 (IGF-1)"
+aliases = ["igf1", "insulin-like growth factor 1", "somatomedin c"]
+canonical_unit = "ng_ml"
+plausible_min = 40.0
+plausible_max = 800.0
+
+[[analyte]]
 id = "homa_ir"
 name = "HOMA-IR"
 aliases = ["homa", "insulin resistance index"]

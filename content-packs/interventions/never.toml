@@ -27,3 +27,33 @@ targets = []
 sources = ["carvacrol/thymol antimicrobial literature", "SIBO/Candida protocol usage documentation", "mechanism-class reasoning from community crash pattern (tier D)"]
 confidence = "low"
 review_by = "2027-01-15"
+
+[[intervention]]
+id = "rifaximin"
+name = "Rifaximin"
+category = "pharmaceutical"
+tier = "A"
+summary = "Gut-selective antibiotic, the standard SIBO prescription. Real medicine for real indications — and named repeatedly in post-drug crash reports (tier D). Any physician proposing it for a PSSD-history patient must hear the history first and weigh it explicitly; if ever used, targeted use in a stable recovery window with informed consent, never casually for a cosmetic indication. Present for safety documentation; never proposed by this system."
+dosing = [{ form = "physician-only; requires explicit PSSD-history risk discussion", min = 0, max = 0, unit = "n/a", notes = "gate: physician awareness of post-drug sensitivity history is mandatory" }]
+classes = ["antimicrobial_gut", "physician_only"]
+contraindicated_if = ["pssd", "post-ssri sexual dysfunction", "paws"]
+physician_required = true
+targets = []
+sources = ["rifaximin SIBO trials", "community crash reports in post-drug syndromes (tier D)"]
+confidence = "low"
+review_by = "2027-01-15"
+
+[[intervention]]
+id = "doxycycline"
+name = "Doxycycline"
+category = "pharmaceutical"
+tier = "A"
+summary = "The standard oral acne antibiotic and a common gastroenterology choice. Broad-spectrum, gut-flora-disrupting, named in post-drug crash reports (tier D). For acne in a PSSD-history patient, topicals (retinoid + benzoyl peroxide, azelaic acid) achieve comparable outcomes without the gut; reserve systemic antibiotics for genuine physician-weighed necessity. Present for safety documentation; never proposed by this system."
+dosing = [{ form = "physician-only; requires explicit PSSD-history risk discussion", min = 0, max = 0, unit = "n/a", notes = "topical alternatives should be exhausted first for acne" }]
+classes = ["antimicrobial_gut", "physician_only"]
+contraindicated_if = ["pssd", "post-ssri sexual dysfunction", "paws"]
+physician_required = true
+targets = []
+sources = ["doxycycline acne trials", "community crash reports in post-drug syndromes (tier D)"]
+confidence = "low"
+review_by = "2027-01-15"

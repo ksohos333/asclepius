@@ -143,6 +143,19 @@ confidence = "high"
 review_by = "2027-01-15"
 
 [[range]]
+analyte = "igf_1"
+kind = "population"
+sex = "male"
+age_min = 18
+age_max = 39
+low = 90.0
+high = 360.0
+unit = "ng_ml"
+source = "typical young-adult male lab band; strongly assay-dependent — interpret with the issuing laboratory's own percentile bands"
+confidence = "low"
+review_by = "2027-01-15"
+
+[[range]]
 analyte = "serum_iron"
 kind = "population"
 low = 65.0
