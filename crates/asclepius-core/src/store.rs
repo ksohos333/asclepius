@@ -7,7 +7,7 @@ use std::path::Path;
 use std::sync::Mutex;
 use uuid::Uuid;
 
-pub const SCHEMA_VERSION: i64 = 3;
+pub const SCHEMA_VERSION: i64 = 4;
 
 const SCHEMA: &str = r#"
 CREATE TABLE IF NOT EXISTS meta (
@@ -70,6 +70,12 @@ CREATE TABLE IF NOT EXISTS trial_log (
     ts INTEGER NOT NULL,
     kind TEXT NOT NULL,
     text TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS pubmed_cache (
+    pmid TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    abstract TEXT NOT NULL,
+    fetched_at INTEGER NOT NULL
 );
 "#;
 
@@ -662,6 +668,49 @@ impl Db {
         Ok(rows)
     }
 
+    pub fn pubmed_cache_get(&self, pmid: &str) -> Option<crate::literature::PubMedArticle> {
+        let conn = self.conn.lock().expect("db mutex poisoned");
+        conn.query_row(
+            "SELECT pmid, title, abstract FROM pubmed_cache WHERE pmid = ?1",
+            params![pmid],
+            |row| {
+                Ok(crate::literature::PubMedArticle {
+                    pmid: row.get(0)?,
+                    title: row.get(1)?,
+                    abstract_text: row.get(2)?,
+                })
+            },
+        )
+        .ok()
+    }
+
+    pub fn pubmed_cache_put(
+        &self,
+        articles: &[crate::literature::PubMedArticle],
+    ) -> Result<(), AsclepiusError> {
+        let mut conn = self.conn.lock().expect("db mutex poisoned");
+        let tx = conn.transaction().map_err(db_err)?;
+        for article in articles {
+            tx.execute(
+                "INSERT INTO pubmed_cache (pmid, title, abstract, fetched_at)
+                 VALUES (?1, ?2, ?3, ?4)
+                 ON CONFLICT(pmid) DO UPDATE SET title = excluded.title, abstract = excluded.abstract, fetched_at = excluded.fetched_at",
+                params![article.pmid, article.title, article.abstract_text, now_secs()],
+            )
+            .map_err(db_err)?;
+        }
+        tx.commit().map_err(db_err)?;
+        Ok(())
+    }
+
+    pub fn pubmed_cache_len(&self) -> usize {
+        let conn = self.conn.lock().expect("db mutex poisoned");
+        conn.query_row("SELECT COUNT(*) FROM pubmed_cache", [], |row| {
+            row.get::<_, i64>(0)
+        })
+        .unwrap_or(0) as usize
+    }
+
     pub fn latest_fact(&self, analyte: &str) -> Result<Option<FactRow>, AsclepiusError> {
         let conn = self.conn.lock().expect("db mutex poisoned");
         let mut stmt = conn
@@ -673,7 +722,9 @@ impl Db {
                  LIMIT 1",
             )
             .map_err(db_err)?;
-        let mut rows = stmt.query_map(params![analyte], map_fact_row).map_err(db_err)?;
+        let mut rows = stmt
+            .query_map(params![analyte], map_fact_row)
+            .map_err(db_err)?;
         match rows.next() {
             Some(row) => Ok(Some(row.map_err(db_err)?)),
             None => Ok(None),
@@ -684,10 +735,7 @@ impl Db {
         analytes
             .iter()
             .map(|a| {
-                let id = self
-                    .latest_fact(a)
-                    .ok()
-                    .and_then(|row| row.map(|r| r.id));
+                let id = self.latest_fact(a).ok().and_then(|row| row.map(|r| r.id));
                 (a.clone(), id)
             })
             .collect()
@@ -867,12 +915,17 @@ mod tests {
     fn history_same_second_ties_break_by_insertion_order() {
         let db = Db::in_memory().unwrap();
         let first = result("ferritin", 100.0);
-        db.commit_panel(None, None, &[&first], "lab_report").unwrap();
+        db.commit_panel(None, None, &[&first], "lab_report")
+            .unwrap();
         let second = result("ferritin", 200.0);
-        db.commit_panel(None, None, &[&second], "lab_report").unwrap();
+        db.commit_panel(None, None, &[&second], "lab_report")
+            .unwrap();
         let hist = db.history(Some("ferritin"), 10).unwrap();
         assert_eq!(hist.len(), 2);
-        assert_eq!(hist[0].value, 100.0, "insertion order must hold within a second");
+        assert_eq!(
+            hist[0].value, 100.0,
+            "insertion order must hold within a second"
+        );
         assert_eq!(hist[1].value, 200.0);
     }
 

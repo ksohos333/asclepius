@@ -1,8 +1,10 @@
 pub mod analyte;
+pub mod bridge;
 pub mod conditions;
 pub mod derived;
 pub mod error;
 pub mod interventions;
+pub mod literature;
 pub mod panel;
 pub mod profile;
 pub mod range;

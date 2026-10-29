@@ -1,4 +1,5 @@
 use asclepius_core::analyte::AnalyteRegistry;
+use asclepius_core::bridge::Bridge;
 use asclepius_core::conditions::{ConditionLibrary, ConditionQuery};
 use asclepius_core::derived::{
     DERIVED_IDS, FreeTInput, HomaInput, free_testosterone_vermeulen, homa_ir,
@@ -6,6 +7,7 @@ use asclepius_core::derived::{
 use asclepius_core::interventions::{
     FLAG_REQUIRES_BASELINE_LABS, InterventionLibrary, ProtocolInput, propose,
 };
+use asclepius_core::literature::{LiteratureInput, PubMedClient, local_search};
 use asclepius_core::panel::{
     AnalyteResult, CommitInput, PanelInput, normalize_panel, normalize_value,
 };
@@ -35,6 +37,8 @@ struct Asclepius {
     conditions: Arc<ConditionLibrary>,
     interventions: Arc<InterventionLibrary>,
     triage: Arc<TriageSet>,
+    pubmed: Arc<PubMedClient>,
+    bridge: Arc<Bridge>,
     db: Arc<Db>,
 }
 
@@ -155,6 +159,14 @@ impl Asclepius {
                 })
             })
             .collect();
+        let committed_count = committed.len();
+        let rejected_count = rejected.len();
+        self.bridge.post(
+            "status",
+            &format!(
+                "panel committed: {committed_count} analytes stored, {rejected_count} rejected"
+            ),
+        );
         Ok(CallToolResult::success(vec![json_content(
             serde_json::json!({ "panel_id": panel_id, "committed": committed, "rejected": rejected }),
         )?]))
@@ -409,10 +421,61 @@ impl Asclepius {
             return Err(McpError::invalid_params("text is required", None));
         }
         let hits = triage_check(&self.triage, &text);
+        if let Some(hit) = hits
+            .iter()
+            .find(|h| matches!(h.urgency, asclepius_core::rules::Urgency::Emergency))
+            .or_else(|| {
+                hits.iter()
+                    .find(|h| matches!(h.urgency, asclepius_core::rules::Urgency::Urgent))
+            })
+        {
+            self.bridge.post(
+                "status",
+                &format!("triage {}: {}", hit.rule_id, hit.message),
+            );
+        }
         let payload = serde_json::json!({
             "hits": hits,
             "clear": hits.is_empty(),
             "note": if hits.is_empty() { "no red-flag patterns matched; proceed with root-cause work" } else { "red-flag pattern(s) matched: address conventional care first" },
+        });
+        Ok(CallToolResult::success(vec![json_content(payload)?]))
+    }
+
+    #[tool(
+        description = "Verify a medical claim against evidence. Local knowledge base first (condition cards, rules, interventions with their sources and confidence); then PubMed when enabled (env ASCLEPIUS_PUBMED=1 — note: the claim text is sent to NCBI eutils; abstracts are cached locally). Returns evidence only, never a verdict: compare the claim against returned sources and PMIDs yourself, cite what you use. This is the anti-confabulation gate for medical assertions."
+    )]
+    fn literature_verify(
+        &self,
+        Parameters(LiteratureInput { claim, max_results }): Parameters<LiteratureInput>,
+    ) -> Result<CallToolResult, McpError> {
+        if claim.trim().is_empty() {
+            return Err(McpError::invalid_params("claim is required", None));
+        }
+        let limit = max_results.unwrap_or(5).clamp(1, 20);
+        let local_hits = local_search(
+            &self.conditions,
+            &self.rules,
+            &self.interventions,
+            &claim,
+            limit,
+        );
+        let pubmed_section: serde_json::Value = if !self.pubmed.enabled {
+            serde_json::json!({
+                "enabled": false,
+                "note": "PubMed egress disabled. Set ASCLEPIUS_PUBMED=1 to enable (claim text is sent to NCBI eutils).",
+            })
+        } else {
+            match self.pubmed_search_and_cache(&claim, limit) {
+                Ok(sections) => sections,
+                Err(e) => serde_json::json!({ "enabled": true, "error": e }),
+            }
+        };
+        let payload = serde_json::json!({
+            "claim": claim,
+            "local_hits": local_hits,
+            "pubmed": pubmed_section,
+            "instruction_to_caller": "evidence only — you decide supports/contradicts/neutral; cite local hit ids or PMIDs for any assertion you make",
         });
         Ok(CallToolResult::success(vec![json_content(payload)?]))
     }
@@ -483,6 +546,8 @@ impl Asclepius {
             .db
             .begin_trial(&input, &card.name, baseline_ids)
             .map_err(domain_error)?;
+        self.bridge
+            .post("status", &format!("trial begun: {} ({})", card.name, id));
         Ok(CallToolResult::success(vec![json_content(
             serde_json::json!({ "id": id, "status": "planned", "baseline_fact_ids": self.db.get_trial(&id).ok().flatten().and_then(|t| t.baseline_fact_ids) }),
         )?]))
@@ -531,6 +596,10 @@ impl Asclepius {
             .get_trial(&input.id)
             .map_err(domain_error)?
             .ok_or_else(|| McpError::internal_error("trial vanished", None))?;
+        self.bridge.post(
+            "status",
+            &format!("trial {} -> {}", input.id, input.status.as_str()),
+        );
         let payload = serde_json::to_value(&row)
             .map_err(|e| McpError::internal_error(e.to_string(), None))?;
         Ok(CallToolResult::success(vec![json_content(payload)?]))
@@ -639,6 +708,59 @@ impl Asclepius {
     }
 }
 
+impl Asclepius {
+    fn pubmed_search_and_cache(
+        &self,
+        claim: &str,
+        limit: usize,
+    ) -> Result<serde_json::Value, String> {
+        let pmids = self.pubmed.search_pmids(claim, limit)?;
+        let mut articles: Vec<serde_json::Value> = Vec::new();
+        let mut missing: Vec<String> = Vec::new();
+        for pmid in &pmids {
+            match self.db.pubmed_cache_get(pmid) {
+                Some(cached) => articles.push(serde_json::json!({
+                    "pmid": cached.pmid,
+                    "title": cached.title,
+                    "abstract_excerpt": cached.abstract_text.chars().take(600).collect::<String>(),
+                    "cached": true,
+                })),
+                None => missing.push(pmid.clone()),
+            }
+        }
+        let mut fetched_count = 0usize;
+        if !missing.is_empty() {
+            let fetched = self.pubmed.fetch_articles(&missing)?;
+            fetched_count = fetched.len();
+            self.db
+                .pubmed_cache_put(&fetched)
+                .map_err(|e| format!("cache write failed: {e}"))?;
+            let fetched_map: std::collections::HashMap<
+                String,
+                &asclepius_core::literature::PubMedArticle,
+            > = fetched.iter().map(|a| (a.pmid.clone(), a)).collect();
+            for pmid in &pmids {
+                if let Some(article) = fetched_map.get(pmid) {
+                    articles.push(serde_json::json!({
+                        "pmid": article.pmid,
+                        "title": article.title,
+                        "abstract_excerpt": article.abstract_text.chars().take(600).collect::<String>(),
+                        "cached": false,
+                    }));
+                }
+            }
+        }
+        let cached_count = pmids.len().saturating_sub(fetched_count);
+        Ok(serde_json::json!({
+            "enabled": true,
+            "query": claim,
+            "pmids": articles,
+            "fetched": fetched_count,
+            "cached": cached_count,
+        }))
+    }
+}
+
 #[tool_handler]
 impl ServerHandler for Asclepius {
     fn get_info(&self) -> ServerConfig {
@@ -665,10 +787,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let conditions = ConditionLibrary::load_dir(&root.join("conditions"))?;
     let interventions = InterventionLibrary::load_dir(&root.join("interventions"))?;
     let triage = TriageSet::load_dir(&root.join("triage"))?;
+    let pubmed = PubMedClient::from_env();
+    let bridge = Bridge::from_env();
     let db_path = data_home().join("asclepius.db");
     let db = Db::open(&db_path)?;
     eprintln!(
-        "asclepius {} serving: {} analytes, {} ranges, {} rules, {} condition cards, {} interventions, {} triage rules from {} | ledger {}",
+        "asclepius {} serving: {} analytes, {} ranges, {} rules, {} condition cards, {} interventions, {} triage rules from {} | ledger {} | pubmed {} | bridge {}",
         VERSION,
         registry.all().len(),
         ranges.len(),
@@ -677,7 +801,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         interventions.all().len(),
         triage.len(),
         root.display(),
-        db_path.display()
+        db_path.display(),
+        if pubmed.enabled {
+            "enabled"
+        } else {
+            "disabled"
+        },
+        if bridge.enabled() {
+            "enabled"
+        } else {
+            "disabled"
+        },
     );
     let doctor = Asclepius {
         registry: Arc::new(registry),
@@ -686,6 +820,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         conditions: Arc::new(conditions),
         interventions: Arc::new(interventions),
         triage: Arc::new(triage),
+        pubmed: Arc::new(pubmed),
+        bridge: Arc::new(bridge),
         db: Arc::new(db),
     };
     let service = doctor
