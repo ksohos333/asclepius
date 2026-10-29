@@ -622,18 +622,18 @@ impl Asclepius {
         let changed = self.db.set_trial_status(&input).map_err(domain_error)?;
         if !changed {
             return Err(McpError::invalid_params(
-                format!("trial not found: {}", input.id),
+                format!("trial not found: {}", input.trial_id),
                 None,
             ));
         }
         let row = self
             .db
-            .get_trial(&input.id)
+            .get_trial(&input.trial_id)
             .map_err(domain_error)?
             .ok_or_else(|| McpError::internal_error("trial vanished", None))?;
         self.bridge.post(
             "status",
-            &format!("trial {} -> {}", input.id, input.status.as_str()),
+            &format!("trial {} -> {}", input.trial_id, input.status.as_str()),
         );
         let payload = serde_json::to_value(&row)
             .map_err(|e| McpError::internal_error(e.to_string(), None))?;

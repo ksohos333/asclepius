@@ -265,7 +265,7 @@ pub struct TrialLogInput {
 
 #[derive(Debug, Clone, Default, Deserialize, schemars::JsonSchema)]
 pub struct TrialStatusInput {
-    pub id: String,
+    pub trial_id: String,
     pub status: TrialStatus,
 }
 
@@ -586,19 +586,19 @@ impl Db {
             TrialStatus::Active => conn
                 .execute(
                     "UPDATE trials SET status = 'active', started_at = COALESCE(started_at, ?2) WHERE id = ?1",
-                    params![input.id, now],
+                    params![input.trial_id, now],
                 )
                 .map_err(db_err)?,
             TrialStatus::Completed | TrialStatus::Aborted => conn
                 .execute(
                     "UPDATE trials SET status = ?2, ended_at = ?3, started_at = COALESCE(started_at, ?3) WHERE id = ?1",
-                    params![input.id, input.status.as_str(), now],
+                    params![input.trial_id, input.status.as_str(), now],
                 )
                 .map_err(db_err)?,
             _ => conn
                 .execute(
                     "UPDATE trials SET status = ?2 WHERE id = ?1",
-                    params![input.id, input.status.as_str()],
+                    params![input.trial_id, input.status.as_str()],
                 )
                 .map_err(db_err)?,
         };
@@ -960,7 +960,7 @@ mod tests {
         );
         assert!(
             db.set_trial_status(&TrialStatusInput {
-                id: id.clone(),
+                trial_id: id.clone(),
                 status: TrialStatus::Active,
             })
             .unwrap()
@@ -972,7 +972,7 @@ mod tests {
         assert_eq!(log.len(), 2);
         assert!(
             db.set_trial_status(&TrialStatusInput {
-                id: id.clone(),
+                trial_id: id.clone(),
                 status: TrialStatus::Completed,
             })
             .unwrap()
@@ -980,7 +980,7 @@ mod tests {
         assert!(db.get_trial(&id).unwrap().unwrap().ended_at.is_some());
         assert!(
             !db.set_trial_status(&TrialStatusInput {
-                id: "tri_missing".into(),
+                trial_id: "tri_missing".into(),
                 status: TrialStatus::Aborted,
             })
             .unwrap()
