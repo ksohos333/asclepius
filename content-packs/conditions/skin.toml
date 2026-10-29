@@ -1,0 +1,17 @@
+[[condition]]
+id = "acne_root_causes"
+name = "Cystic Acne Root Causes"
+aliases = ["acne", "cystic acne", "skin", "acne vulgaris"]
+summary = "Cystic acne is a systemic signal, not a skin-hygiene problem. Five root-cause axes drive it: androgen activity (free testosterone and DHT conversion in skin), insulin/IGF-1 signaling (diet structure, especially glycemic load and dairy protein), gut-skin axis (dysbiosis and permeability driving systemic inflammation), fatty-acid balance (linoleic acid deficiency in sebum causing follicular hyperkeratinization), and inflammation/barrier repair capacity. Topicals manage symptoms; the drivers are internal and testable."
+mechanisms = [
+  "androgen-driven sebum production: free testosterone and 5-alpha-reductase (DHT) activity in sebaceous glands; low SHBG raises the free androgen fraction (tier B)",
+  "insulin/IGF-1 axis: high-glycemic diets and whey/dairy protein raise insulin and IGF-1, stimulating sebum and keratinocyte proliferation (tier B, RCTs on glycemic load)",
+  "gut-skin axis: intestinal dysbiosis and permeability associated with skin inflammation (tier C, emerging)",
+  "sebum linoleic acid deficiency promoting follicular hyperkeratinization and comedone formation (tier C)",
+  "low-grade systemic inflammation impairing barrier repair and prolonging lesions (tier C)"
+]
+biomarkers = ["testosterone_total", "shbg", "free_testosterone_vermeulen", "insulin", "glucose", "homa_ir", "igf_1", "dhea_s", "prolactin"]
+notes = "Workup order for this system: commit the endocrine-metabolic panel (total T, SHBG, fasting insulin, glucose) so the engine can calculate free T and HOMA-IR; the rules then rank which axis your labs actually implicate. Dietary trials (low-glycemic-load, dairy elimination) are the best-evidenced first interventions. Cystic lesions with scarring deserve a dermatologist alongside root-cause work."
+sources = ["glycemic load and acne RCTs (Smith et al. 2007 and successors)", "dairy-acne association meta-analyses", "gut-skin axis reviews (emerging literature)", "androgen and sebum physiology literature"]
+confidence = "low"
+review_by = "2026-12-15"

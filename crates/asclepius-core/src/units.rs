@@ -7,6 +7,8 @@ pub enum Unit {
     NgDl,
     #[serde(rename = "ng_ml")]
     NgMl,
+    #[serde(rename = "pg_ml")]
+    PgMl,
     #[serde(rename = "ug_dl")]
     UgDl,
     #[serde(rename = "ug_ml")]
@@ -59,6 +61,7 @@ impl Unit {
         match self {
             Unit::NgDl
             | Unit::NgMl
+            | Unit::PgMl
             | Unit::UgDl
             | Unit::UgMl
             | Unit::MgDl
@@ -75,6 +78,7 @@ impl Unit {
         match self {
             Unit::NgDl => 0.01,
             Unit::NgMl => 1.0,
+            Unit::PgMl => 0.001,
             Unit::UgDl => 10.0,
             Unit::UgMl => 1000.0,
             Unit::MgDl => 10000.0,
@@ -96,6 +100,7 @@ impl Unit {
         match self {
             Unit::NgDl => "ng/dL",
             Unit::NgMl => "ng/mL",
+            Unit::PgMl => "pg/mL",
             Unit::UgDl => "ug/dL",
             Unit::UgMl => "ug/mL",
             Unit::MgDl => "mg/dL",
@@ -129,6 +134,7 @@ impl Unit {
         match normalized.as_str() {
             "ngdl" => Some(Unit::NgDl),
             "ngml" => Some(Unit::NgMl),
+            "pgml" | "pgml1000" => Some(Unit::PgMl),
             "ugdl" => Some(Unit::UgDl),
             "ugml" => Some(Unit::UgMl),
             "mgdl" => Some(Unit::MgDl),

@@ -1,0 +1,65 @@
+[[range]]
+analyte = "prolactin"
+kind = "population"
+sex = "male"
+low = 5.0
+high = 20.0
+unit = "ng_ml"
+source = "typical adult male lab interval (seed, approximate)"
+confidence = "medium"
+review_by = "2026-12-01"
+
+[[range]]
+analyte = "prolactin"
+kind = "functional"
+sex = "male"
+low = 5.0
+high = 10.0
+unit = "ng_ml"
+source = "integrative preference for lower-half prolactin (GnRH sparing), requires curation"
+confidence = "low"
+review_by = "2026-12-01"
+
+[[range]]
+analyte = "estradiol"
+kind = "population"
+sex = "male"
+low = 10.0
+high = 50.0
+unit = "pg_ml"
+source = "typical adult male lab interval (seed, approximate)"
+confidence = "medium"
+review_by = "2026-12-01"
+
+[[range]]
+analyte = "estradiol"
+kind = "functional"
+sex = "male"
+low = 20.0
+high = 40.0
+unit = "pg_ml"
+source = "integrative male e2 band (bone, libido, mood), requires curation"
+confidence = "low"
+review_by = "2026-12-01"
+
+[[range]]
+analyte = "lh"
+kind = "population"
+sex = "male"
+low = 1.7
+high = 8.6
+unit = "miu_l"
+source = "typical adult male lab interval (seed, approximate)"
+confidence = "medium"
+review_by = "2026-12-01"
+
+[[range]]
+analyte = "fsh"
+kind = "population"
+sex = "male"
+low = 1.5
+high = 12.4
+unit = "miu_l"
+source = "typical adult male lab interval (seed, approximate)"
+confidence = "medium"
+review_by = "2026-12-01"

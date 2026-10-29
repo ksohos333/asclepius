@@ -1,0 +1,32 @@
+[[analyte]]
+id = "prolactin"
+name = "Prolactin"
+aliases = ["prl", "prolactin, serum"]
+canonical_unit = "ng_ml"
+plausible_min = 0.5
+plausible_max = 500.0
+
+[[analyte]]
+id = "estradiol"
+name = "Estradiol"
+aliases = ["e2", "estradiol, serum"]
+molar_mass = 272.38
+canonical_unit = "pg_ml"
+plausible_min = 2.0
+plausible_max = 5000.0
+
+[[analyte]]
+id = "lh"
+name = "Luteinizing Hormone"
+aliases = ["luteinizing hormone", "lh, serum", "lutenizing hormone"]
+canonical_unit = "miu_l"
+plausible_min = 0.1
+plausible_max = 150.0
+
+[[analyte]]
+id = "fsh"
+name = "Follicle Stimulating Hormone"
+aliases = ["follicle stimulating hormone", "fsh, serum"]
+canonical_unit = "miu_l"
+plausible_min = 0.1
+plausible_max = 150.0

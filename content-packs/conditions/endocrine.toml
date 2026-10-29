@@ -68,20 +68,3 @@ sources = ["integrative iron optimization (seed, requires curation)"]
 confidence = "low"
 review_by = "2026-12-01"
 
-[[condition]]
-id = "acne_root_causes"
-name = "Cystic Acne Root Causes"
-aliases = ["acne", "cystic acne", "skin"]
-summary = "Cystic acne is a systemic signal, not a skin-hygiene problem. The root-cause axes: androgen activity (free T via SHBG), insulin/IGF-1 (diet structure, dairy), gut-skin axis, fatty-acid balance, and keratinization. Topicals manage symptoms; the drivers are internal."
-mechanisms = [
-  "androgen-driven sebum production (free testosterone, DHT conversion in skin)",
-  "insulin/IGF-1 axis stimulation (high-glycemic load, whey and dairy protein)",
-  "gut-skin axis (dysbiosis, intestinal permeability driving systemic inflammation)",
-  "linoleic acid deficiency in sebum causing follicular hyperkeratinization",
-  "low-grade systemic inflammation impairing skin barrier repair"
-]
-biomarkers = ["testosterone_total", "shbg", "free_testosterone_vermeulen", "insulin", "glucose", "homa_ir", "igf_1", "dhea_s"]
-notes = "Diet-glycemic-load and dairy evidence is moderately strong; gut-skin axis evidence is emerging. Preview card: full curation in the skin content pack."
-sources = ["dietary glycemic load and acne RCTs (medium)", "gut-skin axis literature (emerging, tier C)"]
-confidence = "low"
-review_by = "2026-12-15"

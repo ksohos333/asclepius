@@ -1,0 +1,35 @@
+[[condition]]
+id = "pssd"
+name = "Post-SSRI Sexual Dysfunction (PSSD)"
+aliases = ["pssd", "post-ssri", "post ssri sexual dysfunction", "ssri sexual dysfunction persistent"]
+summary = "Persistent sexual dysfunction — low libido, genital numbness, erectile/arousal impairment, pleasureless or absent orgasm — continuing for months to years after SSRI (and some SNRI) discontinuation, in the absence of other causes. Not recognized in the DSM; documented through case series, pharmacovigilance signals, and growing mechanistic literature. Diagnosis is one of exclusion: hypogonadism, hyperprolactinemia, thyroid disease, depression residua, and relationship factors must be ruled out first."
+mechanisms = [
+  "persistent 5-HT1A receptor desensitization and downstream dopaminergic blunting (mechanistic, tier C)",
+  "altered neurosteroidogenesis: reduced allopregnanolone via 5-alpha reductase pathway changes (mechanistic, tier C)",
+  "epigenetic modifications of serotonergic and androgen receptor expression (hypothesis, tier C)",
+  "nitric oxide pathway impairment in genital tissue (mechanistic, tier C)",
+  "androgen receptor downregulation hypotheses (case-report derived, tier D)"
+]
+biomarkers = ["testosterone_total", "free_testosterone_vermeulen", "shbg", "prolactin", "estradiol", "lh", "fsh", "tsh", "vitamin_d_25oh"]
+notes = "No validated diagnostic biomarker exists. The correct first move is a full differential workup: this system's rules fire on the treatable mimics (low testosterone, high prolactin, thyroid dysfunction). Much of the literature is case series and pharmacovigilance: read every claim with its tier. Avoid stacking serotonergic interventions during recovery; see the avoid_serotonergic_load card."
+sources = ["Hogan, Le Noury, Healy et al., case series and policy analysis on post-SSRI sexual dysfunction (2019)", "Bahrick, post-SSRI sexual dysfunction case reports", "pharmacovigilance disproportionality analyses (EMA PRAC reviews of SSRI sexual ADRs)", "patient-community documentation (classified tier D)"]
+confidence = "low"
+review_by = "2026-12-15"
+
+[[condition]]
+id = "paws"
+name = "Post-Acute Withdrawal Syndrome (PAWS)"
+aliases = ["paws", "post-acute withdrawal", "protracted withdrawal", "post-ssri withdrawal syndrome"]
+summary = "Protracted withdrawal syndrome after cessation of psychotropic drugs (SSRIs/SNRIs, benzodiazepines, antipsychotics, and also classically alcohol/opioids): episodic waves of symptoms alternating with windows of normality — emotional blunting, anxiety, insomnia, cognitive fog, sensory disturbances — persisting weeks to many months. Terminology overlaps and is contested: post-SSRI withdrawal syndrome, protracted benzodiazepine withdrawal, and PSSD describe neighboring phenomena with different emphases; the literature base is strongest for benzodiazepines."
+mechanisms = [
+  "lagging receptor resensitization and receptor-level adaptation persistence (tier C)",
+  "HPA axis dysregulation with blunted stress-response cycling (tier C)",
+  "neurosteroid (allopregnanolone) depletion during and after drug exposure (tier C)",
+  "glutamatergic rebound and excitatory-inhibitory rebalancing (tier C, benzodiazepine literature)",
+  "kindling hypotheses from addiction medicine extrapolated to psychotropics (tier D)"
+]
+biomarkers = ["tsh", "testosterone_total", "free_testosterone_vermeulen", "ferritin", "vitamin_d_25oh", "cortisol_am"]
+notes = "Time and nervous-system gentleness are the best-evidenced management: slow supervised tapers, sleep protection, graded exercise, and avoiding new psychoactive loads. Aggressive supplementation during acute waves often backfires; rule out endocrine and thyroid contributors before attributing everything to withdrawal. Serotonergic burden scoring matters here as in PSSD."
+sources = ["Ashton, benzodiazepine withdrawal manual and protracted syndrome literature", "Breggin, psychotropic withdrawal syndrome reviews", "post-SSRI withdrawal syndrome case literature (overlapping with PSSD sources)", "patient-community documentation of waves-windows pattern (classified tier D)"]
+confidence = "low"
+review_by = "2026-12-15"

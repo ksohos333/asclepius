@@ -1,0 +1,79 @@
+[[rule]]
+id = "prolactin_above_population_male"
+description = "Prolactin above the population range. Suppresses GnRH and therefore testosterone; also a key PSSD-differential marker. Repeat fasting morning draw to confirm (stress, sex, food all raise it), then image if persistently high."
+severity = "attention"
+conditions = [
+  { analyte = "prolactin", kind = "population", status = "above" }
+]
+suggests = ["testosterone_total", "lh", "fsh", "estradiol", "tsh"]
+relates_to = ["testosterone_patterns", "pssd"]
+source = "standard endocrine practice: confirm then evaluate pituitary axis"
+confidence = "high"
+review_by = "2027-01-15"
+
+[[rule]]
+id = "prolactin_above_functional"
+description = "Prolactin in the upper half of normal: can subtly suppress GnRH pulsatility. Integrative pattern, not consensus; interpret with total T and LH."
+severity = "note"
+conditions = [
+  { analyte = "prolactin", kind = "functional", status = "above" }
+]
+suggests = ["testosterone_total", "lh"]
+relates_to = ["testosterone_patterns"]
+source = "integrative endocrine seed; contested"
+confidence = "low"
+review_by = "2026-12-01"
+
+[[rule]]
+id = "estradiol_above_population_male"
+description = "Estradiol above the male population range: relevant to water retention, libido, and skin; in the acne workup it refines the androgen picture. Aromatization rises with body fat and alcohol."
+severity = "note"
+conditions = [
+  { analyte = "estradiol", kind = "population", status = "above" }
+]
+suggests = ["testosterone_total", "lh", "shbg"]
+relates_to = ["testosterone_patterns"]
+source = "standard endocrine interpretation"
+confidence = "medium"
+review_by = "2027-01-15"
+
+[[rule]]
+id = "estradiol_below_functional_male"
+description = "Estradiol below the functional band: too-low estradiol harms bone, mood, and libido (the anti-estrogen overshoot seen with aggressive aromatase inhibition or very low body fat)."
+severity = "note"
+conditions = [
+  { analyte = "estradiol", kind = "functional", status = "below" }
+]
+suggests = ["testosterone_total", "lh"]
+relates_to = ["testosterone_patterns"]
+source = "integrative endocrine seed; e2 low-band harms are literature-backed but ranges approximate"
+confidence = "low"
+review_by = "2026-12-01"
+
+[[rule]]
+id = "high_lh_with_low_testosterone"
+description = "Pattern consistent with primary gonadal insufficiency: elevated LH alongside low total testosterone. Opposite pattern (low LH + low T) points upstream to the HPT axis. Physician workup indicated either way."
+severity = "attention"
+conditions = [
+  { analyte = "lh", kind = "population", status = "above" },
+  { analyte = "testosterone_total", kind = "population", status = "below" }
+]
+suggests = ["fsh", "prolactin", "estradiol"]
+relates_to = ["testosterone_patterns"]
+source = "classic endocrine differential (primary vs secondary hypogonadism)"
+confidence = "high"
+review_by = "2027-01-15"
+
+[[rule]]
+id = "high_fsh_with_low_testosterone"
+description = "Elevated FSH alongside low total testosterone: corroborates primary gonadal pattern when paired with high LH. Worth endocrinology involvement."
+severity = "attention"
+conditions = [
+  { analyte = "fsh", kind = "population", status = "above" },
+  { analyte = "testosterone_total", kind = "population", status = "below" }
+]
+suggests = ["lh", "prolactin", "estradiol"]
+relates_to = ["testosterone_patterns"]
+source = "classic endocrine differential"
+confidence = "high"
+review_by = "2027-01-15"

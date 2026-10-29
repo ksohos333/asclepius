@@ -506,6 +506,40 @@ impl Asclepius {
                     None,
                 )
             })?;
+        if card
+            .flags
+            .contains(&asclepius_core::interventions::FLAG_PHYSICIAN_REQUIRED.to_string())
+        {
+            return Err(McpError::invalid_params(
+                format!(
+                    "{} is physician_required: n=1 self-trials are blocked for this intervention. Discuss with a clinician instead.",
+                    input.intervention_id
+                ),
+                None,
+            ));
+        }
+        let profile = self.db.profile().map_err(domain_error)?;
+        let contra_hits: Vec<String> = card
+            .contraindicated_if
+            .iter()
+            .filter(|c| {
+                profile
+                    .conditions
+                    .iter()
+                    .any(|p| p.to_lowercase().contains(&c.to_lowercase()))
+            })
+            .cloned()
+            .collect();
+        if !contra_hits.is_empty() {
+            return Err(McpError::invalid_params(
+                format!(
+                    "{} is contraindicated by profile conditions: {}",
+                    input.intervention_id,
+                    contra_hits.join(", ")
+                ),
+                None,
+            ));
+        }
         for analyte in &input.outcome_analytes {
             let known =
                 self.registry.get(analyte).is_some() || DERIVED_IDS.contains(&analyte.as_str());

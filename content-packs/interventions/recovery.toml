@@ -1,0 +1,41 @@
+[[intervention]]
+id = "avoid_serotonergic_load"
+name = "Avoid Serotonergic Load During Recovery"
+category = "lifestyle"
+tier = "C"
+summary = "In PSSD and PAWS contexts, avoid stacking serotonergic substances (St. John's Wort, 5-HTP, high-dose SAMe, ecstasy/MDMA) while the serotonergic system recalibrates. This system scores serotonergic burden automatically when protocols are proposed."
+dosing = [{ form = "behavioral rule", min = 0, max = 0, unit = "n/a", notes = "apply throughout recovery; review with any prescriber" }]
+classes = ["recovery_principle"]
+contraindicated_if = []
+interactions = [{ with = "serotonergic", effect = "this card exists to flag exactly this combination", severity = "avoid" }]
+targets = ["pssd", "paws"]
+sources = ["PSSD mechanistic literature on serotonergic receptor changes (tier C)", "patient-community consensus on worsening substances (tier D)"]
+confidence = "low"
+review_by = "2026-12-15"
+
+[[intervention]]
+id = "supervised_slow_taper"
+name = "Supervised Slow Taper"
+category = "lifestyle"
+tier = "B"
+summary = "For any psychotropic discontinuation, gradual dose reduction over months (often hyperbolic, e.g., 5-10% steps) reduces withdrawal severity versus abrupt or fast stops. Benzodiazepine literature is strongest; the principle extends to SSRIs. Always with the prescriber."
+dosing = [{ form = "prescriber-guided protocol", min = 2, max = 12, unit = "months typical", notes = "hyperbolic tapering literature; never self-direct changes to prescribed psychotropics" }]
+classes = ["recovery_principle"]
+flags = ["physician_required"]
+targets = ["paws"]
+sources = ["Ashton manual (benzodiazepines)", "hyperbolic taper modeling literature (Best & Hendrie era)", "post-SSRI discontinuation studies"]
+confidence = "medium"
+review_by = "2026-12-15"
+
+[[intervention]]
+id = "graded_exercise_recovery"
+name = "Graded Exercise (Recovery Pacing)"
+category = "lifestyle"
+tier = "C"
+summary = "During protracted withdrawal waves, aggressive training often backfires; graded, sub-maximal activity with generous recovery supports HPA recalibration and sleep without crashing the system."
+dosing = [{ form = "graded activity", min = 3, max = 5, unit = "days/week", notes = "stop before exhaustion during waves; expand during windows" }]
+classes = ["recovery_principle"]
+targets = ["paws", "testosterone_patterns"]
+sources = ["graded exercise and HPA axis literature", "withdrawal-community pacing experience (tier D)"]
+confidence = "low"
+review_by = "2026-12-15"
