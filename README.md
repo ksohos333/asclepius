@@ -130,6 +130,20 @@ Unit-conversion math and formulas are pure functions with unit tests against pub
 
 v0.1.0 — the full loop works end to end (verified with sequential-client probes: commit → interpret → protocol → gated trial → retest → delta report). Seeded knowledge covers the endocrine-metabolic panel, cystic acne root causes, PSSD and PAWS. The curation queue is long and that is by design: this is a knowledge base that earns trust one reviewed claim at a time.
 
+## How I built this
+
+**The problem.** Lab reference ranges tell you whether a number is inside a population. They do not tell you what is causing an out-of-range number, and a single verdict hides the reasoning you would need to trust it.
+
+**Design decisions worth arguing about:**
+
+- **Dual ranges, always.** Population reference ranges *and* functional ranges, side by side, because a value can be "normal" for the population and still be the wrong value for this person. Presenting one without the other is how benign findings get over- or under-called.
+- **Root cause before intervention.** The tool walks the causal chain — symptoms, mechanism, contributing factors — and only then proposes anything. The "natural-first" ordering is a deliberate consequence of that ordering, not a separate preference.
+- **Provenance on every number.** Each figure that enters an interpretation keeps where it came from, so a downstream claim can be traced to the measurement rather than to the model's memory. This is the same principle as in `anticonf`: no conclusion without an audit trail.
+- **Every finding carries a source and a confidence level.** A claim that cannot be sourced is marked as inference, visibly, rather than being smoothed into a confident sentence.
+- **Content packs are data, not code.** The clinical knowledge lives in reviewable packs, so the reasoning can be corrected by editing a file rather than patching a binary.
+
+**What I would change with more time:** the causal walk is hand-authored per condition. Encoding the chains as a queryable graph would let the tool traverse them instead of reciting them, and would make gaps in the knowledge base visible rather than invisible.
+
 ## License
 
 [MIT](LICENSE) — with the medical disclaimer above, which the license does not waive.
