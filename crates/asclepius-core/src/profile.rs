@@ -8,12 +8,28 @@ pub enum Sex {
     Female,
 }
 
+/// Private, local-only region scope: drives the pathways layer (how to get
+/// tests, legal classes, physician routing). Never leaves the ledger.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct RegionProfile {
+    /// ISO 3166-1 alpha-2 country code, e.g. "GR".
+    pub country: String,
+    /// Legal bloc layer override, e.g. "EU" (normally resolved from the pack).
+    #[serde(default)]
+    pub bloc: Option<String>,
+    /// Preferred language for request scripts, e.g. "el".
+    #[serde(default)]
+    pub locale: Option<String>,
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Profile {
     #[serde(default)]
     pub name: Option<String>,
     pub age_years: Option<u32>,
     pub sex: Option<Sex>,
+    #[serde(default)]
+    pub region: Option<RegionProfile>,
     #[serde(default)]
     pub conditions: Vec<String>,
     #[serde(default)]
@@ -30,6 +46,7 @@ impl Profile {
             name: Some("user".into()),
             age_years: None,
             sex: None,
+            region: None,
             conditions: Vec::new(),
             medications: Vec::new(),
             supplements: Vec::new(),
@@ -46,6 +63,8 @@ pub struct ProfileUpdate {
     pub age_years: Option<u32>,
     #[serde(default)]
     pub sex: Option<Sex>,
+    #[serde(default)]
+    pub region: Option<RegionProfile>,
     #[serde(default)]
     pub conditions: Option<Vec<String>>,
     #[serde(default)]
@@ -66,6 +85,9 @@ impl Profile {
         }
         if let Some(v) = update.sex {
             self.sex = Some(v);
+        }
+        if let Some(v) = &update.region {
+            self.region = Some(v.clone());
         }
         if let Some(v) = &update.conditions {
             self.conditions = v.clone();

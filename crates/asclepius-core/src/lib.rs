@@ -8,6 +8,7 @@ pub mod error;
 pub mod interventions;
 pub mod investigate;
 pub mod literature;
+pub mod navigate;
 pub mod packs;
 pub mod panel;
 pub mod profile;

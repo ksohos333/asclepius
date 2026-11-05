@@ -1,0 +1,21 @@
+# Region-independent fallbacks: apply to every resolved region unless a
+# deeper layer overrides. Keep this thin — geography lives in the layers.
+
+[region]
+name = "Base layer (region-independent)"
+locale = "en"
+
+[[test_route]]
+test_id = "fasting_insulin_glucose_recheck"
+requires_referral = false
+routes = [
+    { kind = "any_standard_lab", note = "routine bloods; fasting protocol matters more than the lab", cost_estimate = "low" },
+]
+notes = "Region layers override with concrete coverage and pricing semantics."
+review_by = "2027-06-01"
+
+[[legal_class]]
+item_id = "zinc_picolinate"
+class = "otc"
+note = "mineral supplement; retail availability varies by country — deeper layer may override"
+review_by = "2027-06-01"

@@ -28,6 +28,7 @@ pub const DOMAINS: &[&str] = &[
     "causal",
     "treatment-responses",
     "tests",
+    "regions",
 ];
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -528,6 +529,61 @@ pub fn load_pack_index(root: &Path) -> PackIndex {
                             format!("test '{id}' discriminates unknown causal node '{node}'"),
                         ));
                     }
+                }
+            }
+        }
+    }
+    // Region packs: routes and legal classes must reference known tests and
+    // interventions; physician routes must reference known conditions.
+    for file in parsed.get("regions").into_iter().flatten() {
+        if !index.files.contains_key(&file.rel_path) {
+            continue;
+        }
+        for tr in file
+            .value
+            .get("test_route")
+            .and_then(|v| v.as_array())
+            .into_iter()
+            .flatten()
+        {
+            if let Some(test_id) = tr.get("test_id").and_then(|v| v.as_str()) {
+                if !index.test_ids.contains(test_id) {
+                    cascading_offenders.push((
+                        file.rel_path.clone(),
+                        format!("region test_route references unknown test '{test_id}'"),
+                    ));
+                }
+            }
+        }
+        for lc in file
+            .value
+            .get("legal_class")
+            .and_then(|v| v.as_array())
+            .into_iter()
+            .flatten()
+        {
+            if let Some(item) = lc.get("item_id").and_then(|v| v.as_str()) {
+                if !index.intervention_ids.contains(item) && !index.test_ids.contains(item) {
+                    cascading_offenders.push((
+                        file.rel_path.clone(),
+                        format!("region legal_class references unknown item '{item}'"),
+                    ));
+                }
+            }
+        }
+        for pr in file
+            .value
+            .get("physician_route")
+            .and_then(|v| v.as_array())
+            .into_iter()
+            .flatten()
+        {
+            if let Some(condition) = pr.get("condition").and_then(|v| v.as_str()) {
+                if !index.condition_ids.contains(condition) {
+                    cascading_offenders.push((
+                        file.rel_path.clone(),
+                        format!("region physician_route references unknown condition '{condition}'"),
+                    ));
                 }
             }
         }

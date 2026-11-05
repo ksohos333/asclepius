@@ -1,0 +1,101 @@
+# Greece country layer: how to actually get things done in the Greek system.
+# Two parallel worlds: EOPYY (public insurer) coverage via referral from a
+# contracted physician, and private labs/functional labs you can walk into
+# without one. Legal classes and coverage rules drift — review dates matter.
+
+[region]
+country = "GR"
+bloc = "EU"
+name = "Greece"
+locale = "el"
+
+[[test_route]]
+test_id = "sibo_lactulose_breath"
+requires_referral = false
+routes = [
+    { kind = "private_functional_lab", note = "functional-medicine labs in Athens/Thessaloniki offer lactulose H2/CH4 breath testing direct-to-consumer", cost_estimate = "60-120 EUR" },
+    { kind = "specialist_order", specialty = "gastroenterology", note = "a gastroenterologist can order and — more importantly — interpret it medically and act on the result" },
+]
+notes = "EOPYY coverage for breath testing is inconsistent and often limited to specific indications; the private route is the realistic first move. Prefer dual-gas (H2+CH4) panels."
+review_by = "2027-03-01"
+
+[[test_route]]
+test_id = "comprehensive_stool_panel"
+requires_referral = false
+routes = [
+    { kind = "private_functional_lab", note = "comprehensive stool kits (microbiology + calprotectin + elastase) sold DTC by functional labs; sample ships by courier", cost_estimate = "80-180 EUR" },
+]
+notes = "Standard Greek clinical labs run calprotectin individually if you only need the inflammation marker — cheaper than a full panel."
+review_by = "2027-03-01"
+
+[[test_route]]
+test_id = "serum_igf1"
+requires_referral = false
+routes = [
+    { kind = "private_lab_direct", note = "any private diagnostic lab (biopathology); walk-in, results in 1-2 days", cost_estimate = "25-50 EUR" },
+    { kind = "eopyy_referral", note = "covered with a referral from any contracted physician (usually endocrinology/pediatrics contexts)" },
+]
+notes = "Committing the result needs the igf_1 analyte defined in the packs first (currently a listed gap)."
+review_by = "2027-03-01"
+
+[[test_route]]
+test_id = "serum_dhea_s"
+requires_referral = false
+routes = [
+    { kind = "private_lab_direct", note = "any private diagnostic lab; walk-in", cost_estimate = "15-35 EUR" },
+    { kind = "eopyy_referral", note = "covered with referral for endocrine workups" },
+]
+notes = "Same gap note: dhea_s analyte definition pending before results can be committed."
+review_by = "2027-03-01"
+
+[[test_route]]
+test_id = "fasting_insulin_glucose_recheck"
+requires_referral = false
+routes = [
+    { kind = "private_lab_direct", note = "every private lab; morning fasting draw, results same day", cost_estimate = "10-25 EUR" },
+    { kind = "eopyy_referral", note = "fully covered with any physician referral" },
+]
+notes = "The cheapest, highest-leverage recheck on the list — do not overthink the venue, mind the fast."
+review_by = "2027-03-01"
+
+[[legal_class]]
+item_id = "testosterone_therapy"
+class = "rx_only"
+note = "prescription-only, endocrinologist-managed; purchasing without prescription is illegal and medically reckless"
+review_by = "2027-03-01"
+
+[[legal_class]]
+item_id = "zinc_picolinate"
+class = "otc"
+note = "sold as a food supplement in pharmacies and health stores; no prescription needed"
+review_by = "2027-03-01"
+
+[[legal_class]]
+item_id = "ashwagandha"
+class = "grey"
+note = "EU novel-food ambiguity applies; availability in Greek pharmacies/health stores fluctuates — verify current listing at purchase"
+review_by = "2027-03-01"
+
+[[physician_route]]
+condition = "acne_root_causes"
+note = "Order matters when the evidence has a leader. With a dominant gut-skin hypothesis, the gastroenterologist is the door that opens the discriminating test; dermatology remains essential for lesion management and any isotretinoin decision — the point is coordination, not replacement. EOPYY-covered visits need a referral from a GP/contracted physician for non-emergency specialties; private visits (and private labs) need nothing but an appointment."
+review_by = "2027-03-01"
+
+[[physician_route.rank]]
+specialty = "gastroenterology"
+when = "Leading gut-skin hypothesis, transient antibiotic response, or digestive symptoms: the SIBO breath test and stool workup live here."
+script_el = "Θα ήθελα να ερευνήσουμε την πιθανότητα SIBO/δυσβίωσης ως ρίζα της κυστικής ακμής — μια δοκιμασία αναπνοής με λακτουλόζη (H2/CH4) θα διαχωρίσει τις υποθέσεις πριν ξανασκεφτούμε ισοτρετινοΐνη. Έχω το ιστορικό και τις εξετάσεις μου μαζί."
+script_en = "I want to investigate SIBO/dysbiosis as the driver of my cystic acne — a lactulose breath test (H2/CH4) would discriminate between the hypotheses before we consider another isotretinoin course. I have my history and labs with me."
+
+[[physician_route.rank]]
+specialty = "endocrinology"
+when = "Androgen or insulin markers move: free T, SHBG, DHEA-S, IGF-1, fasting insulin interpretation and follow-up."
+script_el = "Έχω κυστική ακμή με υποτροπιάζουσα πορεία και θα ήθελα την εκτίμησή σας στον άξονα ανδρογόνων-ινσουλίνης: ολική/ελεύθερη τεστοστερόνη, SHBG, DHEA-S, ινσουλίνη νηστείας. Υπάρχει οικογενειακό ιστορικό; Όχι. Σκοπεύω να ξαναμετρήσω σε 3 μήνες."
+script_en = "I have recurrent cystic acne and would like your read on the androgen-insulin axis: total/free testosterone, SHBG, DHEA-S, fasting insulin. I plan to retest in 3 months against these baselines."
+
+[[physician_route.rank]]
+specialty = "dermatology"
+when = "Lesion control, scarring risk, or an isotretinoin decision — bring the root-cause workup and ask for coordination."
+script_el = "Η ακμή μου υποτροπιάζει μετά από ισοτρετινοΐνη και αντιβίωση — δουλεύω παράλληλα στη ρίζα (έλεγχος εντέρου, ορμονικός άξονας). Θα ήθελα τον συντονισμό σας για τη διαχείριση των βλαβών όσο διαρκεί ο έλεγχος, και τη γνώμη σας για το πότε μια νέα πορεία ισοτρετινοΐνης θα είχε νόημα."
+script_en = "My acne recurs after isotretinoin and antibiotics — I am working on the root cause in parallel (gut workup, hormone axis). I would like your help managing lesions meanwhile, and your view on when a repeat isotretinoin course would make sense."
+review_by = "2027-03-01"

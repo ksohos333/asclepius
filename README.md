@@ -45,7 +45,7 @@ Treatment responses are first-class diagnostic evidence: "antibiotics cleared it
 
 Everything commits to an **append-only provenance ledger**: every fact carries its source, panel, and timestamps; derived values (Vermeulen free testosterone, HOMA-IR) carry their input fact ids and formula version; `fact_lineage` audits any claim back to measured values.
 
-## Tools (25)
+## Tools (27)
 
 Every tool returns the same envelope shape (`schema_version: 1`): `claims[]` (kind: measured / reported / derived / curated / inferred / conflict / meta, each with evidence ids, optional computation + tier + stale flag), `abstentions[]`, `pack_hashes` (content hashes this output was computed against), and `verifier` (pass/fail, claims checked, sha256 digest).
 
@@ -57,6 +57,7 @@ Every tool returns the same envelope shape (`schema_version: 1`): `claims[]` (ki
 | Reasoning | `interpret_panel`, `explore_condition`, `hypothesis_register` (origin: user/engine/agent), `hypothesis_list`, `hypothesis_update` |
 | Causal | `root_cause_analysis` (graph scoring: base rates + lab probes + treatment responses, full contribution trails, coverage), `treatment_response_register` (treatment history as diagnostic evidence) |
 | Workup | `plan_workup` (tests ranked by expected discrimination of live causes per cost band; uncovered causes surfaced as gaps) |
+| Advocacy | `physician_brief` (specialty routing in evidence order, bilingual request scripts, acquisition routes, legal classes — region-scoped), `region_report` (region coverage + curation queue) |
 | Protocols | `propose_protocol`, `triage_check` |
 | Trials | `trial_begin`, `trial_log`, `trial_update_status`, `trial_list`, `trial_report` (deltas independently verified; n=1 caution boilerplate travels with every report) |
 | Evidence | `literature_verify` |
@@ -126,9 +127,14 @@ content-packs/
 ├── causal/                # typed causal graphs: nodes (root_cause/mechanism/symptom),
 │                          #   weighted tiered edges, lab probes per node
 ├── treatment-responses/   # observable response patterns → score shifts on causal nodes
-└── tests/                 # investigation tests: what they discriminate (node + resolution),
-                           #   specimen, cost band, caveats, availability notes
+├── tests/                 # investigation tests: what they discriminate (node + resolution),
+│                          #   specimen, cost band, caveats, availability notes
+└── regions/               # layered geography: _base < bloc (eu) < country (gr);
+                           #   test acquisition routes, legal classes, physician
+                           #   routing with bilingual request scripts
 ```
+
+Region resolution is deepest-layer-wins with per-entry `resolved_from` provenance — a Greek DUTCH route inherits from the EU layer and says so. Region data is never inferred: unset region, unsupported country, or missing route abstains loudly with the curation path named. `region` is private profile data (`profile_set {region: {country: "GR"}}`); legal classes are last-reviewed data, not legal advice.
 
 Everything is data: edit a pack, restart the server, done. Seeds shipped here are approximations marked with confidence levels and `review_by` dates — the intended workflow is that **you** curate them (and commit your curation) until the review queue is empty. `literature_verify` with `ASCLEPIUS_PUBMED=1` fetches real abstracts to check or upgrade any citation.
 
@@ -150,6 +156,9 @@ crates/
 │   │                  #   lab-probe signals, treatment-response evidence
 │   ├── investigate.rs # workup planning: tests ranked by discrimination
 │   │                  #   of live causes per cost band; gaps surfaced
+│   ├── navigate.rs    # region layers (_base < bloc < country), deepest-
+│   │                  #   wins resolution with provenance; routes, legal
+│   │                  #   classes, physician routing
 │   └── ...            # units, analyte registry, dual ranges, rules,
 │                      #   Vermeulen/HOMA-IR, SQLite ledger (append-only,
 │                      #   patient-scoped, provenance on every row),
@@ -162,7 +171,7 @@ Unit-conversion math and formulas are pure functions with unit tests against pub
 
 ## Status
 
-v0.4.0 — the full loop works end to end (verified with sequential-client probes: commit → interpret → protocol → gated trial → retest → delta report), every response travels as a verifier-checked assertion envelope, and causal reasoning is live: `root_cause_analysis` ranks root causes from graph base rates + committed labs + registered treatment responses with full evidence trails and coverage, and `plan_workup` orders the investigation (SIBO breath before DUTCH, because that is where the evidence points). Seeded knowledge: cystic acne causal graph (10 nodes, 6 root causes), three treatment-response patterns, six investigation tests; thyroid/iron/mood graphs are the next curation targets. The v4→v5→v6 ledger migrations (patient scoping, hypothesis origin, treatment responses) run automatically on first open — back up `asclepius.db` before upgrading.
+v0.5.0 — the full loop works end to end (verified with sequential-client probes: commit → interpret → protocol → gated trial → retest → delta report), every response travels as a verifier-checked assertion envelope, causal reasoning ranks root causes from base rates + committed labs + treatment responses, `plan_workup` orders the investigation by discrimination of live causes, and the advocacy layer routes it: `physician_brief` gives specialty order and bilingual request scripts in your region, `region_report` names the geographic curation queue. Seeded knowledge: cystic acne graph (10 nodes), three treatment-response patterns, six investigation tests, GR region (routes, legal classes, el/en scripts) over EU and base layers. Thyroid/iron/mood graphs and more countries are the next curation targets. Ledger migrations (v4→v6) run automatically — back up `asclepius.db` before upgrading.
 
 ## How I built this
 

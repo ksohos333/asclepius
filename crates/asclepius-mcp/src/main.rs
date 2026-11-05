@@ -13,6 +13,7 @@ use asclepius_core::interventions::{
 };
 use asclepius_core::investigate::{PlanWorkupInput, TestLibrary, plan_workup};
 use asclepius_core::literature::{LiteratureInput, PubMedClient, local_search};
+use asclepius_core::navigate::{PhysicianBriefInput, RegionSet};
 use asclepius_core::packs::{self, PackIndex};
 use asclepius_core::panel::{
     AnalyteResult, CommitInput, PanelInput, normalize_panel, normalize_value,
@@ -47,6 +48,7 @@ struct Asclepius {
     triage: Arc<TriageSet>,
     causal: Arc<CausalGraph>,
     tests: Arc<TestLibrary>,
+    regions: Arc<RegionSet>,
     pubmed: Arc<PubMedClient>,
     bridge: Arc<Bridge>,
     db: Arc<Db>,
@@ -896,6 +898,262 @@ impl Asclepius {
     }
 
     #[tool(
+        description = "The waiting-room advocate: builds a physician brief for a condition in YOUR region (profile_set {region: {country: \"GR\"}} first). Routes specialties in evidence order (e.g. gastroenterology first when the gut hypothesis leads), gives bilingual request scripts (what to say, verbatim), acquisition routes for the ranked workup tests (private lab vs referral, cost bands), and legal classes of relevant items. Region data is last-reviewed pack content, never inferred — missing region or missing routes abstain loudly. Legal classes are data, not legal advice."
+    )]
+    fn physician_brief(
+        &self,
+        Parameters(input): Parameters<PhysicianBriefInput>,
+    ) -> Result<CallToolResult, McpError> {
+        let today = self.packs.today.clone();
+        let known: Vec<&str> = self
+            .conditions
+            .all()
+            .iter()
+            .map(|c| c.id.as_str())
+            .collect();
+        if !known.contains(&input.condition.as_str()) {
+            return Err(McpError::invalid_params(
+                format!(
+                    "unknown condition: {}. known cards: {}",
+                    input.condition,
+                    known.join(", ")
+                ),
+                None,
+            ));
+        }
+        let profile = self.db.profile().map_err(domain_error)?;
+        let Some(region_profile) = &profile.region else {
+            let mut b = self.builder("physician_brief");
+            b.abstention(
+                "physician_brief",
+                "no region set — routing, coverage, and legal classes are region data and are never inferred",
+                vec!["profile_set {region: {country: \"GR\"}}".into()],
+            );
+            return self.finish(b);
+        };
+        let Some(region) = self.regions.resolve(&region_profile.country) else {
+            let mut b = self.builder("physician_brief");
+            b.abstention(
+                "physician_brief",
+                format!(
+                    "no region pack for country '{}' — curate content-packs/regions/{}.toml or pick a supported country",
+                    region_profile.country,
+                    region_profile.country.to_lowercase()
+                ),
+                self.regions.countries().iter().map(|c| c.to_string()).collect(),
+            );
+            return self.finish(b);
+        };
+        let mut b = self.builder("physician_brief");
+        b.claim(
+            ClaimKind::Meta,
+            "resolved region layers (deepest wins; provenance per entry)",
+            serde_json::json!({
+                "country": region.country,
+                "name": region.country_name,
+                "bloc": region.bloc,
+                "locale": region.locale,
+                "layers": region.layers,
+            }),
+            vec!["pack:regions".into()],
+        );
+        // Specialty routing for the condition.
+        match region.physician_route(&input.condition) {
+            Some(route) => {
+                for entry in &route.value.rank {
+                    b.claim(
+                        ClaimKind::Curated,
+                        format!("specialty: {}", entry.specialty),
+                        serde_json::json!({
+                            "specialty": entry.specialty,
+                            "when": entry.when,
+                            "script_el": entry.script_el,
+                            "script_en": entry.script_en,
+                            "resolved_from": route.resolved_from,
+                        }),
+                        vec!["pack:regions".into()],
+                    )
+                    .mark_stale_from_value(&today);
+                }
+                if let Some(note) = &route.value.note {
+                    b.claim(
+                        ClaimKind::Curated,
+                        "routing note",
+                        serde_json::json!({ "note": note, "resolved_from": route.resolved_from }),
+                        vec!["pack:regions".into()],
+                    )
+                    .mark_stale_from_value(&today);
+                }
+            }
+            None => {
+                b.abstention(
+                    format!("physician_brief:{}", input.condition),
+                    "no physician route pack entry for this condition in this region",
+                    vec![format!("physician_route for {} in regions/{}", input.condition, region.country.to_lowercase())],
+                );
+            }
+        }
+        // Acquisition routes for the ranked workup tests of this condition.
+        let latest = self.latest_facts(&profile)?;
+        let facts: Vec<EvidenceFact> = latest
+            .iter()
+            .map(|(lv, id)| EvidenceFact {
+                fact_id: id.clone(),
+                latest: lv.clone(),
+            })
+            .collect();
+        let responses: Vec<EvidenceResponse> = self
+            .db
+            .treatment_responses(200)
+            .map_err(domain_error)?
+            .into_iter()
+            .map(|row| EvidenceResponse {
+                ledger_id: row.id,
+                response_id: row.response_id,
+            })
+            .collect();
+        let analysis = causal::analyze(&self.causal, &input.condition, &facts, &responses);
+        let plan = plan_workup(&self.tests, &analysis);
+        for test in &plan.ranked_tests {
+            match region.test_route(&test.id) {
+                Some(route) => {
+                    b.claim(
+                        ClaimKind::Inferred,
+                        format!("how to get: {}", test.name),
+                        serde_json::json!({
+                            "test_id": test.id,
+                            "discrimination": test.discrimination,
+                            "requires_referral": route.value.requires_referral,
+                            "routes": route.value.routes,
+                            "notes": route.value.notes,
+                            "resolved_from": route.resolved_from,
+                        }),
+                        vec![format!("id:{}", test.id), "pack:regions".into()],
+                    )
+                    .mark_stale_from_value(&today);
+                }
+                None => {
+                    b.abstention(
+                        format!("physician_brief:{}", test.id),
+                        format!("no acquisition route for '{}' in {}", test.name, region.country),
+                        vec![format!("test_route for {} in regions/{}", test.id, region.country.to_lowercase())],
+                    );
+                }
+            }
+        }
+        // Legal classes for the condition's protocol items. Lifestyle and
+        // diet items have no legal class by nature — no abstention for them.
+        let proposal = propose(&self.interventions, &[input.condition.clone()], &profile);
+        for item in &proposal.items {
+            let class_by_nature = matches!(
+                item.category.as_str(),
+                "lifestyle" | "diet"
+            );
+            match region.legal_class(&item.id) {
+                Some(lc) => {
+                    b.claim(
+                        ClaimKind::Inferred,
+                        format!("legal class: {} ({})", item.name, lc.value.class),
+                        serde_json::json!({
+                            "item_id": item.id,
+                            "class": lc.value.class,
+                            "note": lc.value.note,
+                            "resolved_from": lc.resolved_from,
+                            "not_legal_advice": true,
+                        }),
+                        vec![format!("id:{}", item.id), "pack:regions".into()],
+                    )
+                    .mark_stale_from_value(&today);
+                }
+                None if !class_by_nature => {
+                    b.abstention(
+                        format!("physician_brief:{}", item.id),
+                        format!("no legal class for '{}' in {}", item.name, region.country),
+                        vec![format!("legal_class for {} in regions/{}", item.id, region.country.to_lowercase())],
+                    );
+                }
+                None => {} // lifestyle/diet: not a legal-class item
+            }
+        }
+        self.finish(b)
+    }
+
+    #[tool(
+        description = "Region coverage report for the current profile region: which layers resolved, how many test routes / legal classes / physician routes exist, and the unknowns — tests and interventions with no route or legal class in this region. The curation queue for geography. Abstains when no region is set."
+    )]
+    fn region_report(&self) -> Result<CallToolResult, McpError> {
+        let profile = self.db.profile().map_err(domain_error)?;
+        let Some(region_profile) = &profile.region else {
+            let mut b = self.builder("region_report");
+            b.abstention(
+                "region_report",
+                "no region set — set one with profile_set {region: {country: \"GR\"}}",
+                vec!["country code (ISO 3166-1 alpha-2)".into()],
+            );
+            return self.finish(b);
+        };
+        match self.regions.resolve(&region_profile.country) {
+            None => {
+                let mut b = self.builder("region_report");
+                b.abstention(
+                    "region_report",
+                    format!(
+                        "no region pack for country '{}' (available: {})",
+                        region_profile.country,
+                        self.regions.countries().join(", ")
+                    ),
+                    self.regions.countries().iter().map(|c| c.to_string()).collect(),
+                );
+                self.finish(b)
+            }
+            Some(region) => {
+                let known_tests: Vec<String> =
+                    self.tests.all().iter().map(|t| t.id.clone()).collect();
+                let known_items: Vec<String> = self
+                    .interventions
+                    .all()
+                    .iter()
+                    .map(|i| i.id.clone())
+                    .chain(known_tests.iter().cloned())
+                    .collect();
+                let unrouted = region.unrouted_tests(&known_tests);
+                let unclassed = region.unclassed_items(&known_items);
+                let mut b = self.builder("region_report");
+                b.claim(
+                    ClaimKind::Meta,
+                    "resolved region and coverage counts",
+                    serde_json::json!({
+                        "country": region.country,
+                        "name": region.country_name,
+                        "bloc": region.bloc,
+                        "layers": region.layers,
+                        "test_routes": region.test_route_count(),
+                        "legal_classes": region.legal_class_count(),
+                        "physician_routes": region.physician_route_count(),
+                        "known_tests": known_tests.len(),
+                        "unrouted_tests": unrouted.len(),
+                        "unclassed_items": unclassed.len(),
+                    }),
+                    vec!["pack:regions".into(), "pack:tests".into()],
+                )
+                .claim(
+                    ClaimKind::Meta,
+                    "curation queue: tests without a route here",
+                    serde_json::json!(unrouted),
+                    vec!["pack:regions".into(), "pack:tests".into()],
+                )
+                .claim(
+                    ClaimKind::Meta,
+                    "curation queue: items without a legal class here",
+                    serde_json::json!(unclassed),
+                    vec!["pack:regions".into(), "pack:interventions".into()],
+                );
+                self.finish(b)
+            }
+        }
+    }
+
+    #[tool(
         description = "Propose a root-cause protocol for condition-card targets (e.g. [\"testosterone_patterns\", \"acne_root_causes\"]). Natural-first ordering (lifestyle, diet, nutrients, botanicals, then physician-required), screened against the profile: contraindications exclude items, avoid-level interactions are removed, serotonergic burden is flagged, dosing ceilings are listed. Use explore_condition to find valid target ids."
     )]
     fn propose_protocol(
@@ -1709,6 +1967,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         &packs::allowed_files(&root, "treatment-responses", &index),
     )?;
     let tests = TestLibrary::load_paths(&packs::allowed_files(&root, "tests", &index))?;
+    let regions = RegionSet::load_paths(&packs::allowed_files(&root, "regions", &index))?;
     let pubmed = PubMedClient::from_env();
     let bridge = Bridge::from_env();
     let db_path = data_home().join("asclepius.db");
@@ -1741,6 +2000,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         triage: Arc::new(triage),
         causal: Arc::new(causal),
         tests: Arc::new(tests),
+        regions: Arc::new(regions),
         pubmed: Arc::new(pubmed),
         bridge: Arc::new(bridge),
         db: Arc::new(db),

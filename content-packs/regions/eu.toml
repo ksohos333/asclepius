@@ -1,0 +1,27 @@
+# EU bloc layer: semantics common to member states. Country layers override.
+
+[region]
+bloc = "EU"
+name = "European Union (bloc layer)"
+locale = "en"
+
+[[legal_class]]
+item_id = "ashwagandha"
+class = "grey"
+note = "novel-food status of ashwagandha extracts has been contested in several member states; retail availability varies — check the national layer and current national listing before purchase"
+review_by = "2027-06-01"
+
+[[legal_class]]
+item_id = "st_johns_wort"
+class = "otc"
+note = "registered as a traditional herbal medicinal product in most member states; pharmacy-grade products carry a registration number — and real interaction burden regardless of legal class"
+review_by = "2027-06-01"
+
+[[test_route]]
+test_id = "dried_urine_hormone_panel"
+requires_referral = false
+routes = [
+    { kind = "private_functional_lab", note = "sold direct-to-consumer by functional-medicine labs shipping into the EU; results are informational, not diagnosis", cost_estimate = "150-250 EUR" },
+]
+notes = "DTC hormone panels sit outside standard care pathways; bring results to a clinician for interpretation rather than self-adjusting on them."
+review_by = "2027-06-01"
