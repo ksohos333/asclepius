@@ -1,0 +1,91 @@
+# Germany country layer. The German system runs on the Überweisung
+# (referral): statutory-insurance (GKV) lab work normally needs a physician
+# order; private self-pay labs (Selbstzahler) will run almost anything
+# without one. Review dates matter — coverage rules drift.
+
+[region]
+country = "DE"
+bloc = "EU"
+name = "Germany"
+locale = "de"
+
+[[test_route]]
+test_id = "sibo_lactulose_breath"
+requires_referral = false
+routes = [
+    { kind = "private_self_pay_lab", note = "Atemtest (Laktulose H2/CH4) at private labs and functional-medicine practices without referral", cost_estimate = "80-150 EUR self-pay" },
+    { kind = "specialist_order", specialty = "gastroenterology", note = "GKV-covered with Überweisung for documented indications" },
+]
+review_by = "2027-03-01"
+
+[[test_route]]
+test_id = "comprehensive_stool_panel"
+requires_referral = false
+routes = [
+    { kind = "private_self_pay_lab", note = "DTC functional stool panels ship within Germany", cost_estimate = "90-190 EUR self-pay" },
+]
+notes = "Calprotectin alone is cheap and orderable at any standard lab."
+review_by = "2027-03-01"
+
+[[test_route]]
+test_id = "serum_igf1"
+requires_referral = false
+routes = [
+    { kind = "private_self_pay_lab", note = "Selbstzahler lab work without Überweisung", cost_estimate = "25-55 EUR" },
+    { kind = "gkv_referral", note = "covered with physician referral for endocrine workups" },
+]
+review_by = "2027-03-01"
+
+[[test_route]]
+test_id = "serum_dhea_s"
+requires_referral = false
+routes = [
+    { kind = "private_self_pay_lab", note = "Selbstzahler", cost_estimate = "15-40 EUR" },
+    { kind = "gkv_referral", note = "covered with referral" },
+]
+review_by = "2027-03-01"
+
+[[test_route]]
+test_id = "fasting_insulin_glucose_recheck"
+requires_referral = false
+routes = [
+    { kind = "private_self_pay_lab", note = "any private lab; morning fasting draw", cost_estimate = "12-30 EUR" },
+    { kind = "gkv_referral", note = "routine coverage with any physician referral" },
+]
+review_by = "2027-03-01"
+
+[[legal_class]]
+item_id = "testosterone_therapy"
+class = "rx_only"
+note = "prescription-only (Rezeptpflicht), endocrinologist-managed; TRT requires documented clinical hypogonadism"
+review_by = "2027-03-01"
+
+[[legal_class]]
+item_id = "zinc_picolinate"
+class = "otc"
+note = "food supplement (Lebensmittelergänzung); pharmacy and retail"
+review_by = "2027-03-01"
+
+[[physician_route]]
+condition = "acne_root_causes"
+note = "Evidence-order routing as elsewhere. German specifics: a Hausarzt (GP) referral is the normal door to GKV specialist visits; private Selbstzahler routes bypass it entirely. Dermatology manages lesions and any isotretinoin decision (strict iClonis/iPledge-equivalent pregnancy-prevention rules apply)."
+review_by = "2027-03-01"
+
+[[physician_route.rank]]
+specialty = "gastroenterology"
+when = "Leading gut-skin hypothesis, transient antibiotic response, or digestive symptoms."
+script_de = "Ich möchte einen SIBO-Atemtest (Laktulose, H2/CH4) machen lassen, um die Ursache meiner Akne genauer einzugrenzen, bevor wir eine weitere Isotretinoin-Therapie erwägen. Meine Befunde und meine Krankengeschichte habe ich dabei."
+script_en = "I want a SIBO breath test (lactulose, H2/CH4) to narrow down the driver of my acne before considering another isotretinoin course. I have my results and history with me."
+
+[[physician_route.rank]]
+specialty = "endocrinology"
+when = "Androgen or insulin markers move: free T, SHBG, DHEA-S, IGF-1, fasting insulin."
+script_de = "Ich habe rezidivierende zystische Akne und hätte gern Ihre Einschätzung zur Androgen-Insulin-Achse: Gesamt-/freies Testosteron, SHBG, DHEA-S, Nüchtern-Insulin. Eine Kontrolle in drei Monaten ist geplant."
+script_en = "I have recurrent cystic acne and would like your assessment of the androgen-insulin axis: total/free testosterone, SHBG, DHEA-S, fasting insulin. A retest in three months is planned."
+
+[[physician_route.rank]]
+specialty = "dermatology"
+when = "Lesion control, scarring risk, or an isotretinoin decision."
+script_de = "Meine Akne kehrt nach Isotretinoin und Antibiotika zurück — ich arbeite parallel an der Ursache (Darm-Diagnostik, Hormonachse). Ich würde gern Ihre Unterstützung bei der Behandlung der Läsionen und Ihre Einschätzung, wann eine erneute Isotretinoin-Therapie sinnvoll wäre."
+script_en = "My acne recurs after isotretinoin and antibiotics — I am working on the root cause in parallel. I would like your help with lesion management and your view on when a repeat isotretinoin course would make sense."
+review_by = "2027-03-01"

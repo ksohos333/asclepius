@@ -1,0 +1,101 @@
+# United States country layer. Coverage rules drift by state and insurer —
+# review dates matter. Direct-access testing is broad but insurance-driven:
+# a physician order usually decides who pays, not whether you can test.
+
+[region]
+country = "US"
+name = "United States"
+locale = "en"
+
+[[test_route]]
+test_id = "sibo_lactulose_breath"
+requires_referral = false
+routes = [
+    { kind = "direct_access_lab", note = "breath test kits sold direct-to-consumer and via functional-medicine/telehealth practices", cost_estimate = "$100-200 self-pay" },
+    { kind = "specialist_order", specialty = "gastroenterology", note = "GI ordering makes interpretation and follow-up part of the same visit" },
+]
+notes = "Insurance coverage for breath testing varies widely and often requires documented symptoms plus a GI order."
+review_by = "2027-03-01"
+
+[[test_route]]
+test_id = "comprehensive_stool_panel"
+requires_referral = false
+routes = [
+    { kind = "direct_access_lab", note = "DTC functional labs (microbiology + markers); results are informational", cost_estimate = "$150-350 self-pay" },
+]
+notes = "Insurance rarely covers DTC stool panels; calprotectin alone is orderable cheaply through standard labs."
+review_by = "2027-03-01"
+
+[[test_route]]
+test_id = "serum_igf1"
+requires_referral = false
+routes = [
+    { kind = "direct_access_lab", note = "orderable without a referral at direct-access labs in most states", cost_estimate = "$40-90 self-pay" },
+    { kind = "insurer_order", note = "covered with physician order for endocrine indications" },
+]
+review_by = "2027-03-01"
+
+[[test_route]]
+test_id = "serum_dhea_s"
+requires_referral = false
+routes = [
+    { kind = "direct_access_lab", note = "widely available self-order", cost_estimate = "$40-90 self-pay" },
+    { kind = "insurer_order", note = "covered with physician order" },
+]
+review_by = "2027-03-01"
+
+[[test_route]]
+test_id = "fasting_insulin_glucose_recheck"
+requires_referral = false
+routes = [
+    { kind = "direct_access_lab", note = "cheap and universally available; fasting draw", cost_estimate = "$15-50 self-pay" },
+    { kind = "insurer_order", note = "routine coverage with any physician order" },
+]
+review_by = "2027-03-01"
+
+[[test_route]]
+test_id = "dried_urine_hormone_panel"
+requires_referral = false
+routes = [
+    { kind = "direct_access_lab", note = "DTC functional labs ship kits nationwide; results are informational, not diagnosis", cost_estimate = "$200-400 self-pay" },
+]
+review_by = "2027-03-01"
+
+[[legal_class]]
+item_id = "testosterone_therapy"
+class = "rx_only"
+note = "Schedule III controlled substance: prescription-only with extra controls; endocrinologist-managed"
+review_by = "2027-03-01"
+
+[[legal_class]]
+item_id = "zinc_picolinate"
+class = "otc"
+note = "dietary supplement under DSHEA; no prescription needed"
+review_by = "2027-03-01"
+
+[[legal_class]]
+item_id = "ashwagandha"
+class = "otc"
+note = "sold as a dietary supplement under DSHEA; EU novel-food disputes do not apply here — quality varies by brand"
+review_by = "2027-03-01"
+
+[[physician_route]]
+condition = "acne_root_causes"
+note = "Same evidence-order routing as elsewhere: when the gut hypothesis leads, GI opens the discriminating test. US-specific: direct-access labs mean you can arrive at any visit with data already in hand; dermatology remains essential for lesion management and isotretinoin decisions (iPLEDGE program requirements apply)."
+review_by = "2027-03-01"
+
+[[physician_route.rank]]
+specialty = "gastroenterology"
+when = "Leading gut-skin hypothesis, transient antibiotic response, or digestive symptoms."
+script_en = "I want to investigate SIBO/dysbiosis as the driver of my cystic acne — a lactulose breath test (H2/CH4) would discriminate between the hypotheses before we consider another isotretinoin course. I can bring my own labs and history."
+
+[[physician_route.rank]]
+specialty = "endocrinology"
+when = "Androgen or insulin markers move: free T, SHBG, DHEA-S, IGF-1, fasting insulin."
+script_en = "I have recurrent cystic acne and would like your read on the androgen-insulin axis: total/free testosterone, SHBG, DHEA-S, fasting insulin. I plan to retest in 3 months against these baselines."
+
+[[physician_route.rank]]
+specialty = "dermatology"
+when = "Lesion control, scarring risk, or an isotretinoin decision — bring the root-cause workup and ask for coordination."
+script_en = "My acne recurs after isotretinoin and antibiotics — I am working on the root cause in parallel (gut workup, hormone axis). I would like your help managing lesions meanwhile, and your view on when a repeat isotretinoin course would make sense."
+review_by = "2027-03-01"
