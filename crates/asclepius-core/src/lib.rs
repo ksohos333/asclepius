@@ -1,6 +1,7 @@
 pub mod analyte;
 pub mod bridge;
 pub mod causal;
+pub mod community;
 pub mod conditions;
 pub mod derived;
 pub mod envelope;

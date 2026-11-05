@@ -1,3 +1,4 @@
+use crate::conditions::Tier;
 use crate::error::AsclepiusError;
 use crate::profile::Profile;
 use crate::range::Confidence;
@@ -270,6 +271,29 @@ pub struct Proposal {
     pub interactions: Vec<InteractionHit>,
     pub serotonergic_burden: Option<String>,
     pub disclaimer: String,
+}
+
+/// Harm-first partition: move items below the evidence floor out of the
+/// proposal. Withheld items are returned (never hidden) — for harm-first
+/// conditions, "withheld: insufficient evidence" IS the answer.
+pub fn partition_by_floor(
+    mut items: Vec<ProposalItem>,
+    floor: &str,
+) -> (Vec<ProposalItem>, Vec<ProposalItem>) {
+    let floor_tier = Tier::parse(floor);
+    let mut withheld = Vec::new();
+    if let Some(floor) = floor_tier {
+        items.retain(|item| {
+            let meets = Tier::parse(&item.tier).map(|t| t.meets(floor)).unwrap_or(false);
+            if meets {
+                true
+            } else {
+                withheld.push(item.clone());
+                false
+            }
+        });
+    }
+    (items, withheld)
 }
 
 fn matches_any(haystack: &[String], needles: &[String]) -> Vec<String> {

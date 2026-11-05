@@ -3,6 +3,7 @@ use asclepius_core::bridge::Bridge;
 use asclepius_core::causal::{
     self, CausalGraph, EvidenceFact, EvidenceResponse, RootCauseAnalysisInput,
 };
+use asclepius_core::community::CommunitySignals;
 use asclepius_core::conditions::{ConditionLibrary, ConditionQuery};
 use asclepius_core::derived::{
     DERIVED_IDS, FreeTInput, HomaInput, free_testosterone_vermeulen, homa_ir,
@@ -55,6 +56,7 @@ struct Asclepius {
     tests: Arc<TestLibrary>,
     regions: Arc<RegionSet>,
     symptoms: Arc<SymptomSet>,
+    signals: Arc<CommunitySignals>,
     pubmed: Arc<PubMedClient>,
     bridge: Arc<Bridge>,
     db: Arc<Db>,
@@ -1559,6 +1561,39 @@ impl Asclepius {
         let today = self.packs.today.clone();
         let profile = self.db.profile().map_err(domain_error)?;
         let proposal = propose(&self.interventions, &targets, &profile);
+        // Harm-first: the strictest evidence floor across requested targets.
+        let floor = targets
+            .iter()
+            .filter_map(|t| self.conditions.get(t))
+            .filter_map(|c| c.evidence_floor.as_deref())
+            .filter_map(asclepius_core::conditions::Tier::parse)
+            .min();
+        let (items, withheld): (Vec<_>, Vec<_>) = match floor {
+            Some(_) if !proposal.items.is_empty() => {
+                let floor_str = targets
+                    .iter()
+                    .filter_map(|t| self.conditions.get(t))
+                    .filter_map(|c| c.evidence_floor.as_deref())
+                    .min()
+                    .unwrap_or("B");
+                asclepius_core::interventions::partition_by_floor(proposal.items, floor_str)
+            }
+            _ => (proposal.items, Vec::new()),
+        };
+        // Community signals: hurt at/above threshold screens items out;
+        // helped flags community support without tier inflation.
+        let mut screened_out: Vec<(String, &asclepius_core::community::CommunitySignal)> = Vec::new();
+        let kept: Vec<_> = items
+            .into_iter()
+            .filter(|item| {
+                if let Some(signal) = self.signals.screens_out(&item.id) {
+                    screened_out.push((item.name.clone(), signal));
+                    false
+                } else {
+                    true
+                }
+            })
+            .collect();
         let mut b = self.builder("propose_protocol");
         b.claim(
             ClaimKind::Meta,
@@ -1566,7 +1601,19 @@ impl Asclepius {
             serde_json::json!(&targets),
             vec!["query:propose_protocol".into()],
         );
-        for item in &proposal.items {
+        if let Some(floor) = floor {
+            b.claim(
+                ClaimKind::Meta,
+                "harm-first posture active",
+                serde_json::json!({
+                    "evidence_floor": format!("{:?}", floor),
+                    "withheld_count": withheld.len(),
+                    "note": "items below the floor are listed as withheld, never proposed — for this population 'insufficient evidence' is the honest answer",
+                }),
+                vec!["pack:conditions".into(), "engine:guardrails".into()],
+            );
+        }
+        for item in &kept {
             b.claim(
                 ClaimKind::Curated,
                 format!("protocol rung: {} ({})", item.name, item.category),
@@ -1575,6 +1622,38 @@ impl Asclepius {
             )
             .mark_stale_from_value(&today)
             .tier(&item.tier);
+            for signal in self.signals.for_item(&item.id).iter().filter(|s| s.direction == "helped") {
+                b.claim(
+                    ClaimKind::Curated,
+                    format!("community signal: {} helped (~{} reports)", item.name, signal.reports),
+                    serde_json::to_value(signal).unwrap_or(serde_json::Value::Null),
+                    vec!["pack:community-signals".into()],
+                )
+                .mark_stale_from_value(&today)
+                .tier(&signal.tier);
+            }
+        }
+        for withheld_item in &withheld {
+            b.claim(
+                ClaimKind::Meta,
+                format!("withheld below evidence floor: {} (tier {})", withheld_item.name, withheld_item.tier),
+                serde_json::to_value(withheld_item).unwrap_or(serde_json::Value::Null),
+                vec!["pack:interventions".into(), "pack:conditions".into()],
+            );
+        }
+        for (name, signal) in &screened_out {
+            b.claim(
+                ClaimKind::Inferred,
+                format!("screened out by community harm signal: {}", name),
+                serde_json::json!({
+                    "item": name,
+                    "signal": signal,
+                    "note": "hurt signal at/above report threshold; tier D community data",
+                }),
+                vec![format!("id:{}", signal.id), "pack:community-signals".into()],
+            )
+            .mark_stale_from_value(&today)
+            .tier(&signal.tier);
         }
         for ex in &proposal.excluded {
             b.claim(
@@ -1588,7 +1667,7 @@ impl Asclepius {
         match profile.region.as_ref().and_then(|r| self.regions.resolve(&r.country)) {
             Some(region) => {
                 let intervention_ids: Vec<String> =
-                    proposal.items.iter().map(|i| i.id.clone()).collect();
+                    kept.iter().map(|i| i.id.clone()).collect();
                 let mut unmatched_any = false;
                 for item_id in &intervention_ids {
                     let matches = region.products_for(item_id);
@@ -1652,7 +1731,7 @@ impl Asclepius {
             serde_json::json!(&proposal.disclaimer),
             vec!["engine:guardrails".into()],
         );
-        if proposal.items.is_empty() && proposal.excluded.is_empty() {
+        if kept.is_empty() && proposal.excluded.is_empty() && withheld.is_empty() {
             b.abstention(
                 "propose_protocol",
                 "no interventions in the packs target these conditions",
@@ -2472,6 +2551,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let tests = TestLibrary::load_paths(&packs::allowed_files(&root, "tests", &index))?;
     let regions = RegionSet::load_paths(&packs::allowed_files(&root, "regions", &index))?;
     let symptoms = SymptomSet::load_paths(&packs::allowed_files(&root, "symptoms", &index))?;
+    let signals =
+        CommunitySignals::load_paths(&packs::allowed_files(&root, "community-signals", &index))?;
     let pubmed = PubMedClient::from_env();
     let bridge = Bridge::from_env();
     let db_path = data_home().join("asclepius.db");
@@ -2506,6 +2587,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         tests: Arc::new(tests),
         regions: Arc::new(regions),
         symptoms: Arc::new(symptoms),
+        signals: Arc::new(signals),
         pubmed: Arc::new(pubmed),
         bridge: Arc::new(bridge),
         db: Arc::new(db),

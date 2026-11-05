@@ -374,6 +374,7 @@ mod tests {
                 mechanisms: vec![],
                 biomarkers: vec![],
                 notes: None,
+                evidence_floor: None,
                 sources: vec!["seed".into()],
                 confidence: crate::range::Confidence::Low,
                 review_by: None,

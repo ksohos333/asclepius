@@ -60,7 +60,7 @@ Every tool returns the same envelope shape (`schema_version: 1`): `claims[]` (ki
 | Inference | `hypothesis_space` (computed unknowns as creativity scaffolding: untestable causes, uncovered causes, uncommitted probes, unconsumed response patterns, mechanism-family kinship across conditions), `propose_novel_hypothesis` (agent-origin hypotheses, tier D on arrival, refs must resolve before writing, review-required), `literature_probe` (hypothesis-first search over causal nodes, response patterns, cards, and opt-in PubMed) |
 | Workup | `plan_workup` (tests ranked by expected discrimination of live causes per cost band; uncovered causes surfaced as gaps) |
 | Advocacy | `physician_brief` (specialty routing in evidence order, bilingual request scripts, acquisition routes, legal classes — region-scoped), `region_report` (region coverage + curation queue) |
-| Protocols | `propose_protocol` (natural-first ordering; region products attach purchasable rungs with label-honest disclosure — strain/CFU gaps named, stacking ceilings counted), `triage_check` |
+| Protocols | `propose_protocol` (natural-first ordering; harm-first evidence floors per condition — below-floor items are withheld and named, never proposed; community hurt signals at/above threshold screen items out, helped signals flag without tier inflation; region products attach purchasable rungs with label-honest disclosure), `triage_check` |
 | Trials | `trial_begin` (outcomes: lab analytes, derived ids, or single-item symptom scales), `trial_log`, `trial_update_status`, `trial_list`, `trial_report` (lab and symptom deltas independently verified, index-aligned baselines; n=1 caution boilerplate travels with every report) |
 | Evidence | `literature_verify` |
 
@@ -157,8 +157,12 @@ content-packs/
                            #   (same brand elsewhere = separate entry,
                            #   linked by shared_brand — never smeared)
 ├── symptoms/              # patient-reported outcome scales: single-item 0-10
-                           #   and multi-item instruments (adapted wordings
-                           #   labeled; validated originals cited, not copied)
+│                          #   and multi-item instruments (adapted wordings
+│                          #   labeled; validated originals cited, not copied)
+└── community-signals/     # structured patient-community reports: item +
+                           #   direction (hurt/helped) + approximate count +
+                           #   review date; tier D; hurt ≥ threshold screens
+                           #   items out, helped flags without tier inflation
 ```
 
 Region resolution is deepest-layer-wins with per-entry `resolved_from` provenance — a Greek DUTCH route inherits from the EU layer and says so. Region data is never inferred: unset region, unsupported country, or missing route abstains loudly with the curation path named. `region` is private profile data (`profile_set {region: {country: "GR"}}`); legal classes are last-reviewed data, not legal advice.
@@ -198,7 +202,7 @@ Unit-conversion math and formulas are pure functions with unit tests against pub
 
 ## Status
 
-v0.10.0 — the full loop works end to end, every response travels as a verifier-checked assertion envelope, causal reasoning ranks root causes (now for acne, PSSD, and PAWS), `plan_workup` orders the investigation, the advocacy layer routes it regionally, protocols ground to purchasable products, the audit ring posts every envelope, the symptom ledger carries patient-reported outcomes — and **the inference workbench is live**: `hypothesis_space` computes the graph's open unknowns (including mechanism kinship across conditions — the gut-tryptophan axis linking acne dysbiosis at 0.85 to PSSD crash vulnerability), `propose_novel_hypothesis` gives reasoning models a disciplined landing place (origin agent, tier D on arrival, refs must resolve before anything is written, review-required by default +90 days), and `literature_probe` checks an idea against everything the engine knows before it is believed. Creativity in, honesty labeled on arrival. Ledger migrations (v4→v7) run automatically — back up `asclepius.db` before upgrading.
+v0.11.0 — the full loop works end to end, every response travels as a verifier-checked assertion envelope, causal reasoning ranks root causes (acne, PSSD, PAWS), `plan_workup` orders the investigation, the advocacy layer routes regionally, protocols ground to purchasable products, the audit ring posts every envelope, the symptom ledger carries patient-reported outcomes, the inference workbench computes unknowns and disciplines creativity — and **harm-first is now enforced, not aspirational**: PSSD/PAWS carry evidence floors (tier B) so below-floor items are withheld and named ("insufficient evidence" as an honest answer), and the community's helped/hurt experience lives in a structured signals pack (tier D, approximate counts, review dates) that screens hazardous items out and flags community support without inflating any tier. Ledger migrations (v4→v7) run automatically — back up `asclepius.db` before upgrading.
 
 ## How I built this
 

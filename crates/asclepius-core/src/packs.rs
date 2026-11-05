@@ -30,6 +30,7 @@ pub const DOMAINS: &[&str] = &[
     "tests",
     "regions",
     "symptoms",
+    "community-signals",
 ];
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -65,6 +66,7 @@ pub struct PackIndex {
     response_ids: BTreeSet<String>,
     test_ids: BTreeSet<String>,
     scale_ids: BTreeSet<String>,
+    signal_ids: BTreeSet<String>,
     pub today: String,
 }
 
@@ -88,6 +90,7 @@ impl PackIndex {
             response_ids: BTreeSet::new(),
             test_ids: BTreeSet::new(),
             scale_ids: BTreeSet::new(),
+            signal_ids: BTreeSet::new(),
             today: today.into(),
         }
     }
@@ -139,6 +142,7 @@ impl PackIndex {
             || self.response_ids.contains(id)
             || self.test_ids.contains(id)
             || self.scale_ids.contains(id)
+            || self.signal_ids.contains(id)
     }
 
     pub fn is_empty(&self) -> bool {
@@ -239,6 +243,9 @@ pub fn load_pack_index(root: &Path) -> PackIndex {
     }
     for file in parsed.get("symptoms").into_iter().flatten() {
         collect_ids(&file.value, "scale", "id", &mut index.scale_ids);
+    }
+    for file in parsed.get("community-signals").into_iter().flatten() {
+        collect_ids(&file.value, "signal", "id", &mut index.signal_ids);
     }
 
     // Pass 3: cross-domain referential integrity. A file with a dangling
@@ -683,6 +690,44 @@ pub fn load_pack_index(root: &Path) -> PackIndex {
             }
         }
     }
+    // Community signals: item refs must resolve; ids unique; direction sane.
+    let mut signal_ids_seen: BTreeSet<String> = BTreeSet::new();
+    for file in parsed.get("community-signals").into_iter().flatten() {
+        if !index.files.contains_key(&file.rel_path) {
+            continue;
+        }
+        for signal in file
+            .value
+            .get("signal")
+            .and_then(|v| v.as_array())
+            .into_iter()
+            .flatten()
+        {
+            let id = signal.get("id").and_then(|v| v.as_str()).unwrap_or("<missing id>");
+            if !signal_ids_seen.insert(id.to_string()) {
+                cascading_offenders.push((
+                    file.rel_path.clone(),
+                    format!("duplicate community signal id '{id}'"),
+                ));
+            }
+            if let Some(item) = signal.get("item_id").and_then(|v| v.as_str()) {
+                if !index.intervention_ids.contains(item) {
+                    cascading_offenders.push((
+                        file.rel_path.clone(),
+                        format!("community signal '{id}' references unknown item '{item}'"),
+                    ));
+                }
+            }
+            if let Some(direction) = signal.get("direction").and_then(|v| v.as_str()) {
+                if direction != "hurt" && direction != "helped" {
+                    cascading_offenders.push((
+                        file.rel_path.clone(),
+                        format!("community signal '{id}' has invalid direction '{direction}' (hurt|helped)"),
+                    ));
+                }
+            }
+        }
+    }
     if !cascading_offenders.is_empty() {
         let bad: BTreeSet<String> = cascading_offenders
             .iter()
@@ -709,6 +754,11 @@ pub fn load_pack_index(root: &Path) -> PackIndex {
         for file in parsed.get("symptoms").into_iter().flatten() {
             if index.files.contains_key(&file.rel_path) {
                 collect_ids(&file.value, "scale", "id", &mut index.scale_ids);
+            }
+        }
+        for file in parsed.get("community-signals").into_iter().flatten() {
+            if index.files.contains_key(&file.rel_path) {
+                collect_ids(&file.value, "signal", "id", &mut index.signal_ids);
             }
         }
     }

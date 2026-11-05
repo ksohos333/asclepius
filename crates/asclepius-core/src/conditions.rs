@@ -7,6 +7,34 @@ fn default_confidence() -> Confidence {
     Confidence::Medium
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+pub enum Tier {
+    #[serde(rename = "A")]
+    A,
+    #[serde(rename = "B")]
+    B,
+    #[serde(rename = "C")]
+    C,
+    #[serde(rename = "D")]
+    D,
+}
+
+impl Tier {
+    pub fn parse(s: &str) -> Option<Self> {
+        match s {
+            "A" => Some(Tier::A),
+            "B" => Some(Tier::B),
+            "C" => Some(Tier::C),
+            "D" => Some(Tier::D),
+            _ => None,
+        }
+    }
+    /// A > B > C > D: true when `self` meets or exceeds `floor`.
+    pub fn meets(self, floor: Tier) -> bool {
+        self <= floor
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConditionCard {
     pub id: String,
@@ -20,6 +48,11 @@ pub struct ConditionCard {
     pub biomarkers: Vec<String>,
     #[serde(default)]
     pub notes: Option<String>,
+    /// Harm-first posture: when set, protocol items below this evidence tier
+    /// are withheld (listed, never proposed) unless physician-gated.
+    /// "No answer is an answer" as an enforced property.
+    #[serde(default)]
+    pub evidence_floor: Option<String>,
     #[serde(default)]
     pub sources: Vec<String>,
     #[serde(default = "default_confidence")]
@@ -181,6 +214,7 @@ mod tests {
                 mechanisms: vec!["androgen activity".into(), "igf-1 dairy glycemic".into()],
                 biomarkers: vec!["testosterone_total".into(), "insulin".into()],
                 notes: None,
+                evidence_floor: None,
                 sources: vec!["seed".into()],
                 confidence: Confidence::Low,
                 review_by: None,
@@ -193,6 +227,7 @@ mod tests {
                 mechanisms: vec!["autoimmune tpo".into()],
                 biomarkers: vec!["tsh".into()],
                 notes: None,
+                evidence_floor: None,
                 sources: vec!["seed".into()],
                 confidence: Confidence::Medium,
                 review_by: None,

@@ -3,6 +3,7 @@ id = "pssd"
 name = "Post-SSRI Sexual Dysfunction (PSSD)"
 aliases = ["pssd", "post-ssri", "post ssri sexual dysfunction", "ssri sexual dysfunction persistent", "post antipsychotic sexual dysfunction", "sam-e sexual dysfunction"]
 summary = "Persistent sexual dysfunction — low libido, genital numbness, erectile/arousal impairment, pleasureless or absent orgasm — continuing for months to years after serotonergic or antidopaminergic drug exposure, in the absence of other causes. Documented after SSRIs/SNRIs, and in case reports after antipsychotics (e.g. quetiapine) and the methyl donor SAM-e; some cases report layered triggers (e.g. partial recovery, then a second serotonergic or methylation-active agent resetting the injury). Not recognized in the DSM; documented through case series, pharmacovigilance signals, and mechanistic literature. Diagnosis is one of exclusion: hypogonadism, hyperprolactinemia, thyroid disease, depression residua, and relationship factors must be ruled out first."
+evidence_floor = "B"
 mechanisms = [
   "persistent 5-HT1A receptor desensitization and downstream dopaminergic blunting (mechanistic, tier C)",
   "altered neurosteroidogenesis: reduced allopregnanolone via 5-alpha reductase pathway changes (mechanistic, tier C)",
@@ -21,6 +22,7 @@ id = "paws"
 name = "Post-Acute Withdrawal Syndrome (PAWS)"
 aliases = ["paws", "post-acute withdrawal", "protracted withdrawal", "post-ssri withdrawal syndrome"]
 summary = "Protracted withdrawal syndrome after cessation of psychotropic drugs (SSRIs/SNRIs, benzodiazepines, antipsychotics, and also classically alcohol/opioids): episodic waves of symptoms alternating with windows of normality — emotional blunting, anxiety, insomnia, cognitive fog, sensory disturbances — persisting weeks to many months. Terminology overlaps and is contested: post-SSRI withdrawal syndrome, protracted benzodiazepine withdrawal, and PSSD describe neighboring phenomena with different emphases; the literature base is strongest for benzodiazepines."
+evidence_floor = "B"
 mechanisms = [
   "lagging receptor resensitization and receptor-level adaptation persistence (tier C)",
   "HPA axis dysregulation with blunted stress-response cycling (tier C)",

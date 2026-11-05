@@ -1,0 +1,66 @@
+# Community signals: structured patient-community outcome reports.
+# Direction + approximate report count + review date. These are tier-D
+# curatorial claims — the point is that a countable, reviewable signal beats
+# prose buried in a sources list. Hurt signals at/above the threshold
+# (reports >= 10) screen items out of proposals; helped signals flag
+# community support WITHOUT inflating any evidence tier.
+
+[[signal]]
+id = "berberine_crash"
+item_id = "berberine"
+direction = "hurt"
+reports = 30
+summary = "Repeatedly named in post-drug crash reports; broad antimicrobial gut action with delayed hard-to-attribute onset."
+tier = "D"
+sources = ["r/PSSD and post-drug community crash threads (approximate count as of review date)"]
+review_by = "2027-01-15"
+
+[[signal]]
+id = "doxycycline_crash"
+item_id = "doxycycline"
+direction = "hurt"
+reports = 15
+summary = "The standard acne antibiotic, named in crash reports when taken during post-drug recovery."
+tier = "D"
+sources = ["post-drug community crash threads (approximate count as of review date)"]
+review_by = "2027-01-15"
+
+[[signal]]
+id = "st_johns_wort_worsening"
+item_id = "st_johns_wort"
+direction = "hurt"
+reports = 20
+summary = "Serotonergic botanical reported to deepen or reset symptoms during incomplete recovery."
+tier = "D"
+sources = ["post-drug community trigger documentation (approximate count as of review date)"]
+review_by = "2027-01-15"
+
+[[signal]]
+id = "sam_e_trigger"
+item_id = "sam_e"
+direction = "hurt"
+reports = 12
+summary = "Methyl-donor trigger reports: sensory loss / setback during recovery."
+tier = "D"
+sources = ["post-drug community documentation (approximate count as of review date)"]
+review_by = "2027-01-15"
+
+[[signal]]
+id = "saffron_tolerated"
+item_id = "saffron"
+direction = "helped"
+reports = 25
+summary = "A gray-zone serotonergic: community reports of stable multi-domain benefit during recovery without setbacks — flag of community support, NOT evidence-tier inflation."
+tier = "D"
+sources = ["post-drug community tolerance reports (approximate count as of review date)"]
+review_by = "2027-01-15"
+
+[[signal]]
+id = "probiotics_tolerated"
+item_id = "multispecies_probiotic_skin"
+direction = "helped"
+reports = 20
+summary = "Community reports of gut/skin benefit without post-drug setbacks — mechanistically opposite to antimicrobials (adds organisms, kills nothing)."
+tier = "D"
+sources = ["post-drug and acne community reports (approximate count as of review date)"]
+review_by = "2027-01-15"
