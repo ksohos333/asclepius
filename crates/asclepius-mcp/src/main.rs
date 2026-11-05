@@ -7,7 +7,11 @@ use asclepius_core::conditions::{ConditionLibrary, ConditionQuery};
 use asclepius_core::derived::{
     DERIVED_IDS, FreeTInput, HomaInput, free_testosterone_vermeulen, homa_ir,
 };
-use asclepius_core::envelope::{ClaimKind, Envelope, EnvelopeBuilder};
+use asclepius_core::envelope::{add_days_iso, today_iso, ClaimKind, Envelope, EnvelopeBuilder};
+use asclepius_core::inference::{
+    HypothesisSpaceInput, LiteratureProbeInput, NovelHypothesisInput, hypothesis_space, probe_graph,
+    unresolved_refs,
+};
 use asclepius_core::interventions::{
     FLAG_REQUIRES_BASELINE_LABS, InterventionLibrary, ProtocolInput, propose,
 };
@@ -1283,6 +1287,239 @@ impl Asclepius {
                 self.finish(b)
             }
         }
+    }
+
+    #[tool(
+        description = "The inference workbench: maps what the causal graph does NOT know for a condition — untestable causes (no probe, no response pattern can move them), uncovered causes (no discriminating test), uncommitted probes, response patterns nothing consumes, and mechanism-family kinship across conditions (e.g. gut-tryptophan-axis nodes in the acne and PSSD graphs). These computed unknowns are where a reasoning model should look deeper — the engine hands it the map of exactly where 'deeper' is. Feed novel ideas back via propose_novel_hypothesis."
+    )]
+    fn hypothesis_space(
+        &self,
+        Parameters(input): Parameters<HypothesisSpaceInput>,
+    ) -> Result<CallToolResult, McpError> {
+        let known: Vec<&str> = self
+            .conditions
+            .all()
+            .iter()
+            .map(|c| c.id.as_str())
+            .collect();
+        if !known.contains(&input.condition.as_str()) {
+            return Err(McpError::invalid_params(
+                format!(
+                    "unknown condition: {}. known cards: {}",
+                    input.condition,
+                    known.join(", ")
+                ),
+                None,
+            ));
+        }
+        if !self.causal.has_condition(&input.condition) {
+            let mut b = self.builder("hypothesis_space");
+            b.abstention(
+                "hypothesis_space",
+                format!("no causal graph exists for '{}' — nothing to explore", input.condition),
+                vec![format!("curate content-packs/causal/ for {}", input.condition)],
+            );
+            return self.finish(b);
+        }
+        let profile = self.db.profile().map_err(domain_error)?;
+        let latest = self.latest_facts(&profile)?;
+        let facts: Vec<EvidenceFact> = latest
+            .iter()
+            .map(|(lv, id)| EvidenceFact { fact_id: id.clone(), latest: lv.clone() })
+            .collect();
+        let responses: Vec<EvidenceResponse> = self
+            .db
+            .treatment_responses(200)
+            .map_err(domain_error)?
+            .into_iter()
+            .map(|row| EvidenceResponse { ledger_id: row.id, response_id: row.response_id })
+            .collect();
+        let analysis = causal::analyze(&self.causal, &input.condition, &facts, &responses);
+        let items = hypothesis_space(&self.causal, &self.tests, &analysis);
+        let mut b = self.builder("hypothesis_space");
+        b.claim(
+            ClaimKind::Meta,
+            "workbench target",
+            serde_json::json!({
+                "condition": input.condition,
+                "open_unknowns": items.len(),
+                "by_kind": {
+                    "untestable_cause": items.iter().filter(|i| i.kind == "untestable_cause").count(),
+                    "uncovered_cause": items.iter().filter(|i| i.kind == "uncovered_cause").count(),
+                    "untested_probes": items.iter().filter(|i| i.kind == "untested_probes").count(),
+                    "unlinked_response": items.iter().filter(|i| i.kind == "unlinked_response").count(),
+                    "mechanism_kinship": items.iter().filter(|i| i.kind == "mechanism_kinship").count(),
+                },
+            }),
+            vec!["pack:causal".into(), "pack:tests".into()],
+        );
+        for item in &items {
+            let mut evidence = vec!["pack:causal".into()];
+            if let Some(node) = &item.node {
+                evidence.insert(0, format!("id:{node}"));
+            }
+            if item.kind == "uncovered_cause" {
+                evidence.push("pack:tests".into());
+            }
+            b.claim(
+                ClaimKind::Inferred,
+                format!("{}: {}", item.kind, item.node_name.clone().unwrap_or_default()),
+                serde_json::to_value(item).unwrap_or(serde_json::Value::Null),
+                evidence,
+            );
+        }
+        if items.is_empty() {
+            b.abstention(
+                "hypothesis_space",
+                "the graph has no open unknowns for this condition — an unusual state worth double-checking",
+                vec![input.condition.clone()],
+            );
+        }
+        self.finish(b)
+    }
+
+    #[tool(
+        description = "Register a NOVEL hypothesis from a reasoning model (or user): one falsifiable sentence plus supporting_refs that must ALL resolve before anything is written (ledger:facts/<id>, ledger:symptom_logs/<id>, ledger:treatment_responses/<id>, id:<knowledge id>, pack:<domain>, pmid:<n>). Lands in the ledger as origin=agent, tier D by default, review-required (defaults to 90 days out). Creativity is welcome here; unproven-ness is labeled on arrival."
+    )]
+    fn propose_novel_hypothesis(
+        &self,
+        Parameters(input): Parameters<NovelHypothesisInput>,
+    ) -> Result<CallToolResult, McpError> {
+        if input.statement.trim().is_empty() {
+            return Err(McpError::invalid_params("statement is required", None));
+        }
+        let bad = unresolved_refs(&input.supporting_refs, &self.db, &self.packs);
+        if !bad.is_empty() {
+            return Err(McpError::invalid_params(
+                format!(
+                    "supporting_refs that do not resolve (nothing written): {}",
+                    bad.join(", ")
+                ),
+                None,
+            ));
+        }
+        let review_by = input
+            .review_by
+            .clone()
+            .unwrap_or_else(|| add_days_iso(&today_iso(), 90));
+        let register = asclepius_core::store::HypothesisRegisterInput {
+            statement: input.statement.clone(),
+            fact_ids: input
+                .supporting_refs
+                .iter()
+                .filter_map(|r| r.strip_prefix("ledger:facts/").map(|s| s.to_string()))
+                .collect(),
+            note: input.note.clone(),
+            review_by: Some(review_by.clone()),
+            origin: Some("agent".into()),
+            pmids: input
+                .supporting_refs
+                .iter()
+                .filter_map(|r| r.strip_prefix("pmid:").map(|s| s.to_string()))
+                .collect(),
+            rule_ids: vec![],
+        };
+        let id = self.db.add_hypothesis(&register).map_err(domain_error)?;
+        let mut b = self.builder("propose_novel_hypothesis");
+        b.claim(
+            ClaimKind::Meta,
+            "novel hypothesis registered (origin: agent)",
+            serde_json::json!({
+                "id": id,
+                "statement": input.statement,
+                "supporting_refs": input.supporting_refs,
+                "origin": "agent",
+                "tier_default": "D",
+                "review_by": review_by,
+            }),
+            vec![format!("ledger:hypotheses/{id}")],
+        )
+        .claim(
+            ClaimKind::Meta,
+            "honesty contract for novel hypotheses",
+            serde_json::json!(
+                "unproven by definition: tier D, review-required, and explicitly non-fact until supported or refuted by evidence; narration must always carry this label"
+            ),
+            vec!["engine:guardrails".into()],
+        );
+        self.finish(b)
+    }
+
+    #[tool(
+        description = "Probe a hypothesis or question against local knowledge BEFORE believing or registering it: causal nodes and treatment-response patterns plus condition/rule/intervention cards, then PubMed when enabled (ASCLEPIUS_PUBMED=1). The pre-flight for propose_novel_hypothesis — is this idea already tested, contradicted, or genuinely novel?"
+    )]
+    fn literature_probe(
+        &self,
+        Parameters(input): Parameters<LiteratureProbeInput>,
+    ) -> Result<CallToolResult, McpError> {
+        if input.query.trim().is_empty() {
+            return Err(McpError::invalid_params("query is required", None));
+        }
+        let limit = input.max_results.unwrap_or(5).clamp(1, 20);
+        let mut b = self.builder("literature_probe");
+        b.claim(
+            ClaimKind::Meta,
+            "probe query",
+            serde_json::json!(&input.query),
+            vec!["query:literature_probe".into()],
+        );
+        let graph_hits = probe_graph(&self.causal, &input.query, limit);
+        for hit in &graph_hits {
+            let pack_ref = if hit.kind == "causal_node" {
+                "pack:causal"
+            } else {
+                "pack:treatment-responses"
+            };
+            b.claim(
+                ClaimKind::Curated,
+                format!("graph hit: {} ({})", hit.title, hit.kind),
+                serde_json::to_value(hit).unwrap_or(serde_json::Value::Null),
+                vec![pack_ref.into()],
+            );
+        }
+        let local_hits = local_search(
+            &self.conditions,
+            &self.rules,
+            &self.interventions,
+            &input.query,
+            limit,
+        );
+        for hit in &local_hits {
+            let pack_ref = match hit.kind.as_str() {
+                "condition" => "pack:conditions",
+                "rule" => "pack:rules",
+                "intervention" => "pack:interventions",
+                _ => "pack:rules",
+            };
+            b.claim(
+                ClaimKind::Curated,
+                format!("local hit: {} {}", hit.kind, hit.id),
+                serde_json::to_value(hit).unwrap_or(serde_json::Value::Null),
+                vec![pack_ref.into()],
+            );
+        }
+        let pubmed_section: serde_json::Value = if !self.pubmed.enabled {
+            serde_json::json!({ "enabled": false, "note": "set ASCLEPIUS_PUBMED=1 to probe PubMed too (query text is sent to NCBI eutils)" })
+        } else {
+            match self.pubmed_search_and_cache(&input.query, limit) {
+                Ok(section) => section,
+                Err(e) => serde_json::json!({ "enabled": true, "error": e }),
+            }
+        };
+        b.claim(
+            ClaimKind::Meta,
+            "PubMed section (opt-in egress)",
+            pubmed_section,
+            vec!["pubmed:query".into()],
+        );
+        if graph_hits.is_empty() && local_hits.is_empty() {
+            b.abstention(
+                "literature_probe",
+                "no local knowledge touches this query — possibly genuinely novel territory",
+                vec![input.query.clone()],
+            );
+        }
+        self.finish(b)
     }
 
     #[tool(

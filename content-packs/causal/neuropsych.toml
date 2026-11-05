@@ -108,6 +108,7 @@ kind = "root_cause"
 name = "Drug-induced gut disruption (tryptophan/serotonin axis)"
 summary = "Antimicrobial gut disruption (rifaximin, doxycycline, berberine, oregano oil) reported to trigger or deepen crashes — the gut is the body's largest tryptophan reservoir and peripheral serotonin source. Mechanism-family cousin of acne's gut_dysbiosis node; the crash-response pattern is its signature evidence. Probiotic additions are the mechanistic opposite (add organisms, kill nothing)."
 conditions = ["pssd"]
+mechanism_family = "gut_tryptophan_axis"
 tier = "D"
 sources = ["community crash reports (tier D)", "gut-tryptophan-serotonin axis literature (tier C)"]
 probes = []

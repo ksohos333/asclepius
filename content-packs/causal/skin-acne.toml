@@ -84,6 +84,7 @@ kind = "root_cause"
 name = "Gut dysbiosis (gut-skin axis)"
 summary = "Intestinal dysbiosis and permeability driving systemic inflammation and skin lesions. Emerging tier-C evidence; no routine blood probe — SIBO breath testing and stool panels belong to the investigation layer. Transient antibiotic response with recurrence is its signature."
 conditions = ["acne_root_causes"]
+mechanism_family = "gut_tryptophan_axis"
 tier = "C"
 sources = ["gut-skin axis reviews (emerging literature)"]
 probes = []

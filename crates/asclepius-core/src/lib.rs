@@ -5,6 +5,7 @@ pub mod conditions;
 pub mod derived;
 pub mod envelope;
 pub mod error;
+pub mod inference;
 pub mod interventions;
 pub mod investigate;
 pub mod literature;

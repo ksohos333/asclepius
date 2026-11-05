@@ -58,6 +58,11 @@ pub struct CausalNode {
     /// Condition card ids this node's graph serves (validated by the gate);
     /// a shared mechanism serves several conditions — one node, many graphs.
     pub conditions: Vec<String>,
+    /// Optional mechanism-family label linking kin mechanisms across
+    /// conditions (e.g. gut_tryptophan_axis): distinct nodes, same machinery —
+    /// evidence and hazards may transfer. Surfaced by hypothesis_space.
+    #[serde(default)]
+    pub mechanism_family: Option<String>,
     #[serde(default)]
     pub probes: Vec<Probe>,
     pub tier: String,
@@ -265,6 +270,10 @@ impl CausalGraph {
 
     pub fn nodes(&self) -> &[CausalNode] {
         &self.nodes
+    }
+
+    pub fn edges(&self) -> &[CausalEdge] {
+        &self.edges
     }
 
     pub fn responses(&self) -> &[TreatmentResponse] {
@@ -514,6 +523,7 @@ mod tests {
             name: id.to_string(),
             summary: String::new(),
             conditions: vec!["acne".into()],
+            mechanism_family: None,
             probes,
             tier: "C".into(),
             sources: vec![],

@@ -45,7 +45,7 @@ Treatment responses are first-class diagnostic evidence: "antibiotics cleared it
 
 Everything commits to an **append-only provenance ledger**: every fact carries its source, panel, and timestamps; derived values (Vermeulen free testosterone, HOMA-IR) carry their input fact ids and formula version; `fact_lineage` audits any claim back to measured values.
 
-## Tools (29)
+## Tools (32)
 
 Every tool returns the same envelope shape (`schema_version: 1`): `claims[]` (kind: measured / reported / derived / curated / inferred / conflict / meta, each with evidence ids, optional computation + tier + stale flag), `abstentions[]`, `pack_hashes` (content hashes this output was computed against), and `verifier` (pass/fail, claims checked, sha256 digest).
 
@@ -57,6 +57,7 @@ Every tool returns the same envelope shape (`schema_version: 1`): `claims[]` (ki
 | Derived | `derived_free_testosterone` (Vermeulen 1999), `derived_homa_ir` (Matthews 1985) |
 | Reasoning | `interpret_panel`, `explore_condition`, `hypothesis_register` (origin: user/engine/agent), `hypothesis_list`, `hypothesis_update` |
 | Causal | `root_cause_analysis` (graph scoring: base rates + lab probes + treatment responses, full contribution trails, coverage), `treatment_response_register` (treatment history as diagnostic evidence) |
+| Inference | `hypothesis_space` (computed unknowns as creativity scaffolding: untestable causes, uncovered causes, uncommitted probes, unconsumed response patterns, mechanism-family kinship across conditions), `propose_novel_hypothesis` (agent-origin hypotheses, tier D on arrival, refs must resolve before writing, review-required), `literature_probe` (hypothesis-first search over causal nodes, response patterns, cards, and opt-in PubMed) |
 | Workup | `plan_workup` (tests ranked by expected discrimination of live causes per cost band; uncovered causes surfaced as gaps) |
 | Advocacy | `physician_brief` (specialty routing in evidence order, bilingual request scripts, acquisition routes, legal classes — region-scoped), `region_report` (region coverage + curation queue) |
 | Protocols | `propose_protocol` (natural-first ordering; region products attach purchasable rungs with label-honest disclosure — strain/CFU gaps named, stacking ceilings counted), `triage_check` |
@@ -197,7 +198,7 @@ Unit-conversion math and formulas are pure functions with unit tests against pub
 
 ## Status
 
-v0.9.0 — the full loop works end to end, every response travels as a verifier-checked assertion envelope, causal reasoning ranks root causes from base rates + committed labs + treatment responses, `plan_workup` orders the investigation by discrimination of live causes, the advocacy layer routes it regionally, protocols ground to purchasable products, the audit ring posts every envelope, and the symptom ledger carries patient-reported outcomes with validated trials. **PSSD and PAWS now have causal graphs**: differential-first (treatable mimics — hypogonadism, hyperprolactinemia, thyroid — are scored root causes with real probes, never footnotes) alongside the mechanistic hypotheses (5-HT1A adaptation, neurosteroid, epigenetic, NO pathway, drug-induced gut disruption), with treatment-response patterns for the origin event, serotonergic worsening, antimicrobial crashes, methyl-donor setbacks, and spontaneous windows. Shared mechanisms serve multiple conditions (`conditions` lists). Ledger migrations (v4→v7) run automatically — back up `asclepius.db` before upgrading.
+v0.10.0 — the full loop works end to end, every response travels as a verifier-checked assertion envelope, causal reasoning ranks root causes (now for acne, PSSD, and PAWS), `plan_workup` orders the investigation, the advocacy layer routes it regionally, protocols ground to purchasable products, the audit ring posts every envelope, the symptom ledger carries patient-reported outcomes — and **the inference workbench is live**: `hypothesis_space` computes the graph's open unknowns (including mechanism kinship across conditions — the gut-tryptophan axis linking acne dysbiosis at 0.85 to PSSD crash vulnerability), `propose_novel_hypothesis` gives reasoning models a disciplined landing place (origin agent, tier D on arrival, refs must resolve before anything is written, review-required by default +90 days), and `literature_probe` checks an idea against everything the engine knows before it is believed. Creativity in, honesty labeled on arrival. Ledger migrations (v4→v7) run automatically — back up `asclepius.db` before upgrading.
 
 ## How I built this
 
