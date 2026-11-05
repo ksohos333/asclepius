@@ -587,6 +587,37 @@ pub fn load_pack_index(root: &Path) -> PackIndex {
                 }
             }
         }
+        // Products must implement known interventions; ids unique per file.
+        let mut product_ids: BTreeSet<&str> = BTreeSet::new();
+        for product in file
+            .value
+            .get("product")
+            .and_then(|v| v.as_array())
+            .into_iter()
+            .flatten()
+        {
+            let id = product.get("id").and_then(|v| v.as_str()).unwrap_or("<missing id>");
+            if !product_ids.insert(id) {
+                cascading_offenders.push((
+                    file.rel_path.clone(),
+                    format!("duplicate product id '{id}'"),
+                ));
+            }
+            for maps in product
+                .get("maps_to")
+                .and_then(|v| v.as_array())
+                .into_iter()
+                .flatten()
+                .filter_map(|v| v.as_str())
+            {
+                if !index.intervention_ids.contains(maps) {
+                    cascading_offenders.push((
+                        file.rel_path.clone(),
+                        format!("product '{id}' maps_to unknown intervention '{maps}'"),
+                    ));
+                }
+            }
+        }
     }
     if !cascading_offenders.is_empty() {
         let bad: BTreeSet<String> = cascading_offenders

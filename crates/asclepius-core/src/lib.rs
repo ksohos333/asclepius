@@ -11,6 +11,7 @@ pub mod literature;
 pub mod navigate;
 pub mod packs;
 pub mod panel;
+pub mod products;
 pub mod profile;
 pub mod range;
 pub mod rules;

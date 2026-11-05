@@ -70,6 +70,24 @@ class = "otc"
 note = "sold as a food supplement in pharmacies and health stores; no prescription needed"
 review_by = "2027-03-01"
 
+[[product]]
+id = "eftonia_skin_beauty"
+name = "Eftonia Skin Beauty"
+vendor = "Eftonia"
+maps_to = ["multispecies_probiotic_skin"]
+format = "2 capsules/day: 13-strain probiotic blend 240 mg + glucomannan 180 mg + zinc 10 mg + vitamin D 10 µg"
+disclosure = "Label discloses '13-strain blend' and total probiotic mass but NOT strain identities or CFU counts — the probiotic card's product-quality markers (named strains, end-of-shelf-life CFU) are only partially met. The zinc (10 mg/cap-pair) sits well under the 25 mg/day stacking ceiling but counts toward it; vitamin D 10 µg (400 IU) is a maintenance dose."
+caveats = [
+    "glucomannan fiber content: separate from any medications by 1-2 hours (the probiotic card says exactly this)",
+    "zinc here stacks with any standalone zinc supplement — count all sources against the 25 mg/day ceiling",
+    "gentle start applies: 1 capsule/day for the first week before the full 2-cap label dose"
+]
+cost_estimate = "Greek pharmacy / online pricing; verify at purchase"
+availability = "Greek pharmacies and online retailers"
+tier = "C"
+sources = ["user-supplied label data (patient profile, started 2026-10-29)", "oral probiotics and acne small RCTs (class evidence, tier C)"]
+review_by = "2027-03-01"
+
 [[legal_class]]
 item_id = "ashwagandha"
 class = "grey"

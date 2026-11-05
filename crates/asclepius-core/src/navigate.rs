@@ -15,6 +15,7 @@
 //! last-reviewed data, not legal advice.
 
 use crate::error::AsclepiusError;
+use crate::products::ProductCard;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -95,6 +96,8 @@ struct RegionFileDef {
     legal_class: Vec<LegalClass>,
     #[serde(default)]
     physician_route: Vec<PhysicianRoute>,
+    #[serde(default)]
+    product: Vec<ProductCard>,
 }
 
 #[derive(Debug, Clone)]
@@ -133,6 +136,7 @@ pub struct ResolvedRegion {
     test_routes: BTreeMap<String, Resolved<TestRoute>>,
     legal_classes: BTreeMap<String, Resolved<LegalClass>>,
     physician_routes: BTreeMap<String, Resolved<PhysicianRoute>>,
+    products: BTreeMap<String, Resolved<ProductCard>>,
 }
 
 impl ResolvedRegion {
@@ -153,6 +157,20 @@ impl ResolvedRegion {
     }
     pub fn physician_route_count(&self) -> usize {
         self.physician_routes.len()
+    }
+    pub fn product_count(&self) -> usize {
+        self.products.len()
+    }
+    /// Products implementing a given intervention, with layer provenance.
+    pub fn products_for(&self, intervention_id: &str) -> Vec<&Resolved<ProductCard>> {
+        self.products
+            .values()
+            .filter(|p| p.value.maps_to.iter().any(|m| m == intervention_id))
+            .collect()
+    }
+    /// All products (for coverage reports).
+    pub fn all_products(&self) -> Vec<&Resolved<ProductCard>> {
+        self.products.values().collect()
     }
     /// Tests known to the engine that have no route in this region — the
     /// visible curation gap, never silently guessed.
@@ -243,6 +261,7 @@ impl RegionSet {
         let mut test_routes: BTreeMap<String, Resolved<TestRoute>> = BTreeMap::new();
         let mut legal_classes: BTreeMap<String, Resolved<LegalClass>> = BTreeMap::new();
         let mut physician_routes: BTreeMap<String, Resolved<PhysicianRoute>> = BTreeMap::new();
+        let mut products: BTreeMap<String, Resolved<ProductCard>> = BTreeMap::new();
         let mut layers_applied: Vec<String> = Vec::new();
 
         for layer in [base_layer, bloc_layer, Some(country_layer)].into_iter().flatten() {
@@ -265,6 +284,12 @@ impl RegionSet {
                     Resolved { value: pr.clone(), resolved_from: layer.layer.clone() },
                 );
             }
+            for product in &layer.def.product {
+                products.insert(
+                    product.id.clone(),
+                    Resolved { value: product.clone(), resolved_from: layer.layer.clone() },
+                );
+            }
         }
 
         Some(ResolvedRegion {
@@ -276,6 +301,7 @@ impl RegionSet {
             test_routes,
             legal_classes,
             physician_routes,
+            products,
         })
     }
 }
@@ -314,6 +340,7 @@ mod tests {
                             review_by: None,
                         }],
                         physician_route: vec![],
+                        product: vec![],
                     },
                 ),
                 layer(
@@ -333,6 +360,7 @@ mod tests {
                             review_by: None,
                         }],
                         legal_class: vec![],
+                        product: vec![],
                         physician_route: vec![PhysicianRoute {
                             condition: "acne".into(),
                             rank: vec![SpecialtyEntry {

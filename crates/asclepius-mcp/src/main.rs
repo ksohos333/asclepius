@@ -1215,6 +1215,56 @@ impl Asclepius {
                 vec!["pack:interventions".into(), "ledger:profile".into()],
             );
         }
+        // Product grounding: attach purchasable regional products to rungs.
+        match profile.region.as_ref().and_then(|r| self.regions.resolve(&r.country)) {
+            Some(region) => {
+                let intervention_ids: Vec<String> =
+                    proposal.items.iter().map(|i| i.id.clone()).collect();
+                let mut unmatched_any = false;
+                for item_id in &intervention_ids {
+                    let matches = region.products_for(item_id);
+                    if matches.is_empty() {
+                        unmatched_any = true;
+                        continue;
+                    }
+                    for product in matches {
+                        b.claim(
+                            ClaimKind::Curated,
+                            format!(
+                                "product for {}: {} (tier {})",
+                                item_id, product.value.name, product.value.tier
+                            ),
+                            serde_json::json!({
+                                "intervention_id": item_id,
+                                "product": product.value,
+                                "resolved_from": product.resolved_from,
+                            }),
+                            vec!["pack:regions".into()],
+                        )
+                        .mark_stale_from_value(&today)
+                        .tier(&product.value.tier);
+                    }
+                }
+                if unmatched_any {
+                    b.abstention(
+                        "propose_protocol:products",
+                        format!(
+                            "some rungs have no product mapped in {} — compound-class rungs only; curate [[product]] entries in regions/{}.toml to ground them",
+                            region.country,
+                            region.country.to_lowercase()
+                        ),
+                        vec!["region product entries".into()],
+                    );
+                }
+            }
+            None => {
+                b.abstention(
+                    "propose_protocol:products",
+                    "no region set — rungs are compound classes only; set profile.region to attach purchasable products",
+                    vec!["profile_set {region: {country: \"GR\"}}".into()],
+                );
+            }
+        }
         b.claim(
             ClaimKind::Meta,
             "interactions between proposed items",
