@@ -1,0 +1,281 @@
+# Causal graphs: PSSD and PAWS. Differential-first by design: the cards say
+# diagnosis is by exclusion, so the treatable mimics are scored root causes
+# with real probes — not footnotes. Mechanistic PSSD hypotheses carry no
+# routine blood probe (that absence is itself the honest signal: tier C/D,
+# scored by history and exclusion). Shared nodes (thyroid mimic,
+# neurosteroid) serve both conditions via `conditions`.
+
+# ---------- PSSD ----------
+
+[[node]]
+id = "pssd_symptom_cluster"
+kind = "symptom"
+name = "PSSD symptom cluster"
+summary = "Persistent low libido, genital numbness, erectile/arousal impairment, pleasureless orgasm — continuing months to years after serotonergic/antidopaminergic exposure, other causes excluded."
+conditions = ["pssd"]
+tier = "C"
+sources = ["Hogan, Le Noury, Healy et al. 2019 case series", "Bahrick case reports"]
+review_by = "2027-06-01"
+
+[[node]]
+id = "hypogonadism_mimic"
+kind = "root_cause"
+name = "Hypogonadism (treatable mimic)"
+summary = "Low total or free testosterone reproduces the libido/erectile half of the cluster and is treatable. Must be excluded before attributing everything to PSSD — it can also coexist with it."
+conditions = ["pssd"]
+tier = "B"
+sources = ["endocrine society hypogonadism guidelines"]
+probes = [
+    { analyte = "testosterone_total", expect = "below", weight = 0.15 },
+    { analyte = "free_testosterone_vermeulen", expect = "below", weight = 0.20 },
+    { analyte = "shbg", expect = "above", weight = 0.05 },
+]
+review_by = "2027-06-01"
+
+[[node]]
+id = "hyperprolactinemia_mimic"
+kind = "root_cause"
+name = "Hyperprolactinemia (treatable mimic)"
+summary = "Elevated prolactin suppresses libido and erectile function; a single measurable, treatable cause that imitates PSSD closely."
+conditions = ["pssd"]
+tier = "B"
+sources = ["hyperprolactinemia and sexual dysfunction literature"]
+probes = [
+    { analyte = "prolactin", expect = "above", weight = 0.20 },
+]
+review_by = "2027-06-01"
+
+[[node]]
+id = "thyroid_dysfunction_mimic"
+kind = "root_cause"
+name = "Thyroid dysfunction (treatable mimic)"
+summary = "Both hypo- and hyperthyroid disturb libido, mood, and energy. The most common endocrine mimic in this cluster; probes weight the hypothyroid direction (TSH above) as the typical libido-suppressing pattern."
+conditions = ["pssd", "paws"]
+tier = "B"
+sources = ["thyroid dysfunction and sexual function literature"]
+probes = [
+    { analyte = "tsh", expect = "above", weight = 0.10 },
+]
+review_by = "2027-06-01"
+
+[[node]]
+id = "serotonergic_receptor_adaptation"
+kind = "root_cause"
+name = "Persistent serotonergic receptor adaptation (5-HT1A desensitization, dopaminergic blunting)"
+summary = "The mechanistic core hypothesis of PSSD: persistent 5-HT1A desensitization with downstream dopaminergic blunting. No routine blood probe — scored by drug history, serotonergic-agent responses, and exclusion of the mimics. Tier C mechanistic literature; tier D in specifics."
+conditions = ["pssd"]
+tier = "C"
+sources = ["5-HT1A receptor adaptation literature", "PSSD mechanistic reviews (tier C)"]
+probes = []
+review_by = "2027-06-01"
+
+[[node]]
+id = "neurosteroid_disruption"
+kind = "root_cause"
+name = "Altered neurosteroidogenesis (allopregnanolone via 5-AR pathway)"
+summary = "Reduced allopregnanolone through 5-alpha-reductase pathway changes after drug exposure; mechanistically overlaps with PAWS neurosteroid depletion. No routine probe."
+conditions = ["pssd", "paws"]
+tier = "C"
+sources = ["neurosteroid literature in SSRI exposure (tier C)"]
+probes = []
+review_by = "2027-06-01"
+
+[[node]]
+id = "epigenetic_modification"
+kind = "root_cause"
+name = "Epigenetic modification of receptor expression"
+summary = "Methylation-state changes to serotonergic and androgen receptor expression — the hypothesis that explains both the persistence and the methyl-donor setback reports. No routine probe; the methyl-donor response pattern is its signature evidence."
+conditions = ["pssd"]
+tier = "D"
+sources = ["epigenetic PSSD hypotheses (tier C/D)", "community methyl-donor setback reports (tier D)"]
+probes = []
+review_by = "2027-06-01"
+
+[[node]]
+id = "no_pathway_impairment"
+kind = "root_cause"
+name = "Nitric oxide pathway impairment (genital tissue)"
+summary = "Local NO signaling impairment in genital tissue; mechanistic literature only."
+conditions = ["pssd"]
+tier = "C"
+sources = ["NO pathway and sexual function literature (tier C)"]
+probes = []
+review_by = "2027-06-01"
+
+[[node]]
+id = "drug_induced_gut_disruption"
+kind = "root_cause"
+name = "Drug-induced gut disruption (tryptophan/serotonin axis)"
+summary = "Antimicrobial gut disruption (rifaximin, doxycycline, berberine, oregano oil) reported to trigger or deepen crashes — the gut is the body's largest tryptophan reservoir and peripheral serotonin source. Mechanism-family cousin of acne's gut_dysbiosis node; the crash-response pattern is its signature evidence. Probiotic additions are the mechanistic opposite (add organisms, kill nothing)."
+conditions = ["pssd"]
+tier = "D"
+sources = ["community crash reports (tier D)", "gut-tryptophan-serotonin axis literature (tier C)"]
+probes = []
+review_by = "2027-06-01"
+
+[[edge]]
+from = "hypogonadism_mimic"
+to = "pssd_symptom_cluster"
+weight = 0.4
+tier = "B"
+sources = ["hypogonadism sexual dysfunction literature"]
+review_by = "2027-06-01"
+
+[[edge]]
+from = "hyperprolactinemia_mimic"
+to = "pssd_symptom_cluster"
+weight = 0.3
+tier = "B"
+sources = ["prolactin-libido literature"]
+review_by = "2027-06-01"
+
+[[edge]]
+from = "thyroid_dysfunction_mimic"
+to = "pssd_symptom_cluster"
+weight = 0.25
+tier = "B"
+sources = ["thyroid-sexual function literature"]
+review_by = "2027-06-01"
+
+[[edge]]
+from = "serotonergic_receptor_adaptation"
+to = "pssd_symptom_cluster"
+weight = 0.5
+tier = "C"
+sources = ["PSSD mechanistic core literature"]
+review_by = "2027-06-01"
+
+[[edge]]
+from = "neurosteroid_disruption"
+to = "pssd_symptom_cluster"
+weight = 0.35
+tier = "C"
+sources = ["allopregnanolone sexual-function literature"]
+review_by = "2027-06-01"
+
+[[edge]]
+from = "epigenetic_modification"
+to = "pssd_symptom_cluster"
+weight = 0.3
+tier = "D"
+sources = ["epigenetic persistence hypotheses"]
+review_by = "2027-06-01"
+
+[[edge]]
+from = "no_pathway_impairment"
+to = "pssd_symptom_cluster"
+weight = 0.3
+tier = "C"
+sources = ["NO pathway literature"]
+review_by = "2027-06-01"
+
+[[edge]]
+from = "drug_induced_gut_disruption"
+to = "pssd_symptom_cluster"
+weight = 0.3
+tier = "D"
+sources = ["community crash pattern (tier D)"]
+review_by = "2027-06-01"
+
+# ---------- PAWS ----------
+
+[[node]]
+id = "paws_wave_cluster"
+kind = "symptom"
+name = "PAWS wave/window cluster"
+summary = "Episodic waves of emotional blunting, anxiety, insomnia, cognitive fog, sensory disturbance alternating with windows of relative normality, persisting weeks to many months after psychotropic cessation."
+conditions = ["paws"]
+tier = "C"
+sources = ["Ashton benzodiazepine manual", "post-SSRI withdrawal case literature"]
+review_by = "2027-06-01"
+
+[[node]]
+id = "receptor_resensitization_lag"
+kind = "root_cause"
+name = "Receptor resensitization lag"
+summary = "Receptor-level adaptations persisting after drug cessation and recovering on their own timescale — the reason time and gentleness are the best-evidenced management. No probe; gradual spontaneous windows are its signature evidence."
+conditions = ["paws"]
+tier = "C"
+sources = ["protracted withdrawal literature (Ashton, Breggin)"]
+probes = []
+review_by = "2027-06-01"
+
+[[node]]
+id = "hpa_dysregulation"
+kind = "root_cause"
+name = "HPA axis dysregulation"
+summary = "Blunted stress-response cycling after psychotropic exposure; morning cortisol would probe it (analyte pending — a listed gap)."
+conditions = ["paws"]
+tier = "C"
+sources = ["HPA axis withdrawal literature"]
+probes = [
+    { analyte = "cortisol_am", expect = "above", weight = 0.10 },
+]
+review_by = "2027-06-01"
+
+[[node]]
+id = "glutamatergic_rebound"
+kind = "root_cause"
+name = "Glutamatergic rebound / E-I rebalancing"
+summary = "Excitatory-inhibitory rebalancing after drug cessation; best documented in the benzodiazepine literature."
+conditions = ["paws"]
+tier = "C"
+sources = ["benzodiazepine withdrawal literature"]
+probes = []
+review_by = "2027-06-01"
+
+[[node]]
+id = "endocrine_mimic_paws"
+kind = "root_cause"
+name = "Endocrine and deficiency mimics (PAWS)"
+summary = "Thyroid dysfunction, low testosterone, iron deficiency, and vitamin D shortfall reproduce withdrawal-brain symptoms and are correctable; the PAWS card's biomarker list exists to exclude these first."
+conditions = ["paws"]
+tier = "B"
+sources = ["endocrine contributions to mood/fatigue literature"]
+probes = [
+    { analyte = "testosterone_total", expect = "below", weight = 0.10 },
+    { analyte = "tsh", expect = "above", weight = 0.10 },
+    { analyte = "ferritin", expect = "below", weight = 0.10 },
+    { analyte = "vitamin_d_25oh", expect = "below", weight = 0.05 },
+]
+review_by = "2027-06-01"
+
+[[edge]]
+from = "receptor_resensitization_lag"
+to = "paws_wave_cluster"
+weight = 0.5
+tier = "C"
+sources = ["protracted withdrawal literature"]
+review_by = "2027-06-01"
+
+[[edge]]
+from = "hpa_dysregulation"
+to = "paws_wave_cluster"
+weight = 0.35
+tier = "C"
+sources = ["HPA withdrawal literature"]
+review_by = "2027-06-01"
+
+[[edge]]
+from = "neurosteroid_disruption"
+to = "paws_wave_cluster"
+weight = 0.3
+tier = "C"
+sources = ["neurosteroid depletion literature"]
+review_by = "2027-06-01"
+
+[[edge]]
+from = "glutamatergic_rebound"
+to = "paws_wave_cluster"
+weight = 0.25
+tier = "C"
+sources = ["benzodiazepine rebound literature"]
+review_by = "2027-06-01"
+
+[[edge]]
+from = "endocrine_mimic_paws"
+to = "paws_wave_cluster"
+weight = 0.3
+tier = "B"
+sources = ["endocrine mimic literature"]
+review_by = "2027-06-01"

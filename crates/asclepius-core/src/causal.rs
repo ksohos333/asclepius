@@ -55,8 +55,9 @@ pub struct CausalNode {
     pub kind: NodeKind,
     pub name: String,
     pub summary: String,
-    /// The condition card this node's graph belongs to (validated by the gate).
-    pub condition: String,
+    /// Condition card ids this node's graph serves (validated by the gate);
+    /// a shared mechanism serves several conditions — one node, many graphs.
+    pub conditions: Vec<String>,
     #[serde(default)]
     pub probes: Vec<Probe>,
     pub tier: String,
@@ -275,7 +276,7 @@ impl CausalGraph {
     }
 
     pub fn has_condition(&self, condition: &str) -> bool {
-        self.nodes.iter().any(|n| n.condition == condition)
+        self.nodes.iter().any(|n| n.conditions.iter().any(|c| c == condition))
     }
 }
 
@@ -370,7 +371,7 @@ pub fn analyze(
     let symptoms: Vec<&str> = graph
         .nodes
         .iter()
-        .filter(|n| n.condition == condition && n.kind == NodeKind::Symptom)
+        .filter(|n| n.conditions.iter().any(|c| c == condition) && n.kind == NodeKind::Symptom)
         .map(|n| n.id.as_str())
         .collect();
 
@@ -378,7 +379,11 @@ pub fn analyze(
     let mut touched = 0usize;
     let mut candidates = 0usize;
 
-    for node in graph.nodes.iter().filter(|n| n.condition == condition && n.kind == NodeKind::RootCause) {
+    for node in graph
+        .nodes
+        .iter()
+        .filter(|n| n.conditions.iter().any(|c| c == condition) && n.kind == NodeKind::RootCause)
+    {
         candidates += 1;
         let (base_weight, base_path) = best_path(
             &graph.edges,
@@ -508,7 +513,7 @@ mod tests {
             kind,
             name: id.to_string(),
             summary: String::new(),
-            condition: "acne".into(),
+            conditions: vec!["acne".into()],
             probes,
             tier: "C".into(),
             sources: vec![],

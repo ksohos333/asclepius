@@ -379,12 +379,16 @@ pub fn load_pack_index(root: &Path) -> PackIndex {
                     format!("duplicate causal node id '{id}'"),
                 ));
             }
-            if let Some(condition) = node.get("condition").and_then(|v| v.as_str()) {
-                if !index.condition_ids.contains(condition) {
-                    offenders.push((
-                        file.rel_path.clone(),
-                        format!("causal node '{id}' belongs to unknown condition '{condition}'"),
-                    ));
+            if let Some(conditions) = node.get("conditions").and_then(|v| v.as_array()) {
+                for condition in conditions.iter().filter_map(|v| v.as_str()) {
+                    if !index.condition_ids.contains(condition) {
+                        offenders.push((
+                            file.rel_path.clone(),
+                            format!(
+                                "causal node '{id}' serves unknown condition '{condition}'"
+                            ),
+                        ));
+                    }
                 }
             }
             for probe in node

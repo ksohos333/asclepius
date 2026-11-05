@@ -1,0 +1,65 @@
+# Treatment-response patterns for PSSD/PAWS: the patient's own history as
+# diagnostic evidence. Tier honesty is the whole game here — these shifts
+# encode case-series and community-reported patterns (tier C/D), stated as
+# such, and they move hypotheses, never mimic exclusions.
+
+[[response]]
+id = "ssri_course_trigger"
+name = "SSRI/SNRI course preceded persistent symptoms"
+pattern = "A serotonergic (or antidopaminergic) drug course preceded the persistent symptom cluster — the origin event. Supports the drug-adaptation mechanisms by definition of the syndrome; does NOT exclude the treatable mimics (those need labs)."
+effects = [
+    { node = "serotonergic_receptor_adaptation", weight = 0.4 },
+    { node = "neurosteroid_disruption", weight = 0.25 },
+    { node = "epigenetic_modification", weight = 0.2 },
+    { node = "no_pathway_impairment", weight = 0.05 },
+]
+tier = "C"
+sources = ["PSSD definition literature (Hogan/Healy case series)", "mechanistic reviews (tier C)"]
+review_by = "2027-06-01"
+
+[[response]]
+id = "serotonergic_agent_worsening"
+name = "Serotonergic agent deepened/reset symptoms during recovery"
+pattern = "A serotonergic agent (St. John's Wort, 5-HTP, high-dose SAM-e, tryptophan loads) taken during incomplete recovery caused sudden deepening or reset of the syndrome — the strongest personal-history evidence for the receptor-adaptation hypothesis."
+effects = [
+    { node = "serotonergic_receptor_adaptation", weight = 0.4 },
+    { node = "epigenetic_modification", weight = 0.15 },
+]
+tier = "D"
+sources = ["patient-community trigger documentation (tier D)", "avoid_serotonergic_load card rationale"]
+review_by = "2027-06-01"
+
+[[response]]
+id = "antimicrobial_crash"
+name = "Antimicrobial crash (sudden severe worsening)"
+pattern = "An antimicrobial course (rifaximin, doxycycline, berberine, oregano oil) during recovery was followed by sudden severe worsening — the crash pattern. The gut-tryptophan-serotonin mechanism signature; probiotics are the mechanistic opposite and carry no known crash mechanism."
+effects = [
+    { node = "drug_induced_gut_disruption", weight = 0.5 },
+    { node = "serotonergic_receptor_adaptation", weight = 0.1 },
+]
+tier = "D"
+sources = ["community crash reports naming antimicrobials (tier D)", "never.toml antimicrobial_gut class"]
+review_by = "2027-06-01"
+
+[[response]]
+id = "methyl_donor_setback"
+name = "Methyl-donor setback (B-complex/SAM-e)"
+pattern = "Methyl-donor inputs (SAM-e, B-complex loads) during recovery caused emotional blunting or sexual worsening, resolving on discontinuation — the epigenetic-methylation hypothesis's signature evidence."
+effects = [
+    { node = "epigenetic_modification", weight = 0.35 },
+]
+tier = "D"
+sources = ["documented patient case (tier D)", "epigenetic methylation hypotheses (tier C)"]
+review_by = "2027-06-01"
+
+[[response]]
+id = "gradual_windows_recovery"
+name = "Gradual windows of spontaneous recovery"
+pattern = "Months off all psychoactive agents brought slowly lengthening windows of normality — consistent with receptor-level adaptation slowly reversing on its own timescale (and with doing nothing being an active, evidence-backed strategy)."
+effects = [
+    { node = "serotonergic_receptor_adaptation", weight = 0.15 },
+    { node = "receptor_resensitization_lag", weight = 0.2 },
+]
+tier = "D"
+sources = ["protracted withdrawal natural-course documentation (tier C/D)"]
+review_by = "2027-06-01"
