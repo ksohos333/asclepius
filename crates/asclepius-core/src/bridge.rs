@@ -33,19 +33,38 @@ impl Bridge {
         if !self.enabled {
             return;
         }
+        let line = self.line(kind, serde_json::json!(body));
+        self.append(&line);
+    }
+
+    /// Post structured JSON as the body (used by the L5 audit ring: every
+    /// verified envelope lands here as an auditable record).
+    pub fn post_json(&self, kind: &str, body: &serde_json::Value) {
+        if !self.enabled {
+            return;
+        }
+        let line = self.line(kind, body.clone());
+        self.append(&line);
+    }
+
+    fn line(&self, kind: &str, body: serde_json::Value) -> String {
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_secs_f64())
             .unwrap_or(0.0);
         let seq = self.seq.fetch_add(1, Ordering::Relaxed);
         let id = format!("asc_{}_{}", now as u64, seq);
-        let line = serde_json::json!({
+        serde_json::json!({
             "id": id,
             "ts": now,
             "source": "asclepius",
             "kind": kind,
             "body": body,
-        });
+        })
+        .to_string()
+    }
+
+    fn append(&self, line: &str) {
         if let Some(parent) = self.path.parent() {
             let _ = std::fs::create_dir_all(parent);
         }
@@ -98,6 +117,24 @@ mod tests {
         assert_eq!(first["kind"], "status");
         assert_eq!(first["body"], "panel committed");
         assert!(first["id"].as_str().unwrap().starts_with("asc_"));
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn post_json_embeds_structured_body() {
+        let path = std::env::temp_dir().join("asclepius-bridge-test-json.jsonl");
+        let _ = std::fs::remove_file(&path);
+        let bridge = Bridge {
+            enabled: true,
+            path: path.clone(),
+            seq: AtomicU64::new(0),
+        };
+        bridge.post_json("envelope", &serde_json::json!({"tool": "ping", "digest": "sha256:x"}));
+        let content = std::fs::read_to_string(&path).unwrap();
+        let line: serde_json::Value = serde_json::from_str(content.lines().next().unwrap()).unwrap();
+        assert_eq!(line["kind"], "envelope");
+        assert_eq!(line["body"]["tool"], "ping");
+        assert_eq!(line["body"]["digest"], "sha256:x");
         let _ = std::fs::remove_file(&path);
     }
 }

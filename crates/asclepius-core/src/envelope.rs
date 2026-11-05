@@ -104,6 +104,63 @@ pub struct Envelope {
     pub verifier: VerifierReport,
 }
 
+impl Envelope {
+    /// Compact view for the external audit ring (L5): every claim's id,
+    /// kind, statement, and evidence, plus every top-level numeric field the
+    /// claim carries (measured values, derived computations, inferred
+    /// scores) — the numbers an LLM narrator is most likely to misquote. The
+    /// bridge posts this after verification; the audit subagent diffs
+    /// narration against it.
+    pub fn audit_view(&self) -> serde_json::Value {
+        let claims: Vec<serde_json::Value> = self
+            .claims
+            .iter()
+            .map(|c| {
+                let mut v = serde_json::json!({
+                    "id": c.id,
+                    "kind": c.kind.as_str(),
+                    "statement": c.statement,
+                    "evidence": c.evidence,
+                });
+                // Every top-level numeric field on the claim's value is
+                // exposed to the auditor (measured `value`s, derived
+                // computations, inferred `score`/`base`, trend counts) —
+                // those are the numbers narration misquotes.
+                if let Some(obj) = c.value.as_object() {
+                    let numbers: serde_json::Map<String, serde_json::Value> = obj
+                        .iter()
+                        .filter_map(|(k, val)| {
+                            val.as_f64().map(|n| (k.clone(), serde_json::json!(n)))
+                        })
+                        .collect();
+                    if !numbers.is_empty() {
+                        v["numbers"] = serde_json::Value::Object(numbers);
+                    }
+                }
+                if let Some(tier) = &c.tier {
+                    v["tier"] = serde_json::json!(tier);
+                }
+                if c.stale.is_some() {
+                    v["stale"] = serde_json::json!(true);
+                }
+                v
+            })
+            .collect();
+        serde_json::json!({
+            "schema_version": self.schema_version,
+            "server": self.server,
+            "server_version": self.server_version,
+            "tool": self.tool,
+            "digest": self.verifier.digest,
+            "verifier_status": self.verifier.status,
+            "claims_checked": self.verifier.claims_checked,
+            "pack_count": self.pack_hashes.len(),
+            "claims": claims,
+            "abstentions": self.abstentions.len(),
+        })
+    }
+}
+
 /// Incremental builder; claim ids are assigned on push (c1, c2, ...).
 #[derive(Debug, Clone)]
 pub struct EnvelopeBuilder {
@@ -339,6 +396,54 @@ mod tests {
         );
         assert_eq!(b.claims()[0].id, "c1");
         assert_eq!(b.claims()[1].id, "c2");
+    }
+
+    #[test]
+    fn audit_view_carries_numbers_and_handles_only() {
+        let mut b = EnvelopeBuilder::new("derived_homa_ir");
+        let mut inputs = BTreeMap::new();
+        inputs.insert("glucose_mg_dl".into(), serde_json::json!(90.0));
+        inputs.insert("insulin_uu_ml".into(), serde_json::json!(8.0));
+        b.derived(
+            "HOMA-IR",
+            serde_json::json!({"value": 1.7778}),
+            vec!["input:derived".into()],
+            "matthews1985",
+            inputs,
+        )
+        .claim(
+            ClaimKind::Inferred,
+            "cause score",
+            serde_json::json!({"score": 0.85, "base": 0.35, "node": "gut_dysbiosis"}),
+            vec!["id:gut_dysbiosis".into(), "pack:causal".into()],
+        )
+        .claim(
+            ClaimKind::Meta,
+            "context",
+            serde_json::json!({"secret_detail": "not for audit"}),
+            vec!["engine:self".into()],
+        );
+        let envelope = b.finish(
+            "asclepius",
+            "0.7.0",
+            VerifierReport {
+                status: "pass".into(),
+                claims_checked: 3,
+                failures: vec![],
+                digest: "sha256:test".into(),
+            },
+        );
+        let view = envelope.audit_view();
+        assert_eq!(view["tool"], "derived_homa_ir");
+        assert_eq!(view["digest"], "sha256:test");
+        let derived = &view["claims"][0];
+        assert_eq!(derived["kind"], "derived");
+        assert_eq!(derived["numbers"]["value"], 1.7778);
+        let inferred = &view["claims"][1];
+        assert_eq!(inferred["numbers"]["score"], 0.85, "scores are auditable numbers");
+        assert_eq!(inferred["numbers"]["base"], 0.35);
+        let meta = &view["claims"][2];
+        assert!(meta.get("numbers").is_none(), "non-numeric values stay out of the audit view");
     }
 
     #[test]

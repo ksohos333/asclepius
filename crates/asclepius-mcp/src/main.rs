@@ -1886,7 +1886,8 @@ impl Asclepius {
     }
 
     /// L3 gate: verify every claim, then serialize. A failing envelope is
-    /// refused — never sent to the client.
+    /// refused — never sent to the client. Every verified envelope is posted
+    /// to the anticonf bridge (when enabled) as the L5 external audit record.
     fn finish(&self, builder: EnvelopeBuilder) -> Result<CallToolResult, McpError> {
         let tool = builder.tool().to_string();
         let report = verify_claims(
@@ -1910,6 +1911,7 @@ impl Asclepius {
             ));
         }
         let envelope: Envelope = builder.finish(NAME, VERSION, report);
+        self.bridge.post_json("envelope", &envelope.audit_view());
         let payload = serde_json::to_value(&envelope)
             .map_err(|e| McpError::internal_error(e.to_string(), None))?;
         Ok(CallToolResult::success(vec![json_content(payload)?]))

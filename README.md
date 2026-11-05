@@ -107,12 +107,30 @@ Spawn `asclepius-mcp` over stdio with `ASCLEPIUS_PACKS` pointing at `content-pac
 | `ASCLEPIUS_PATIENT` | `user` | Patient scope for every ledger read/write (multi-patient-ready ledger; single patient today) |
 | `ASCLEPIUS_PUBMED` | unset (off) | `1` enables PubMed egress in `literature_verify` — **the claim text is sent to NCBI eutils** |
 | `ASCLEPIUS_PUBMED_KEY` | unset | Optional NCBI API key |
-| `ASCLEPIUS_BRIDGE` | unset (off) | `1` enables status posts to the anticonf bridge log |
+| `ASCLEPIUS_BRIDGE` | unset (off) | `1` posts every verified envelope (compact audit view: digest, claims, evidence, numbers) to the bridge log |
 | `ASCLEPIUS_BRIDGE_PATH` | `~/.local/share/anticonf/data/bridge.jsonl` | Bridge log location |
 
 Network egress is **off by default**. The only egress is PubMed lookups, behind an explicit flag, with abstracts cached locally in the ledger.
 
+## The external audit ring (L5)
+
+The engine verifies itself (L0–L3, in-process); the audit ring makes the *narration* checkable. Set `ASCLEPIUS_BRIDGE=1` and every verified tool call posts a compact envelope record to the anticonf bridge (JSONL): tool, verifier digest, and every claim's id, kind, statement, evidence refs, and top-level numbers (`value`s, `score`/`base`, counts).
+
+```
+bridge: 2 records, 2 envelopes
+  ping: 7 claims, sha256:6c958a2ad902e…
+  root_cause_analysis: 8 claims, sha256:9db7098d8d1a…
+
+claim c2 : Gut dysbiosis (gut-skin axis): score 0.85 (base 0.35)
+           numbers: {base: 0.35, score: 0.85}   evidence: [id:gut_dysbiosis, pack:causal, ledger:treatment_responses/tres_…]
+  narration "…gut dysbiosis at 0.85" → PASS — matches claim c2
+  narration "…gut dysbiosis at 0.62" → FAIL — prose says 0.62, envelope says 0.85
+```
+
+**The audit loop, as a workflow:** an LLM client narrates freely — that is its job — but its numbers and attributions are diffable in one pass against the envelope: every number the narration asserts must match a claim's numbers or cite its evidence; anything unmatched is flagged. Run it as a post-response pass (opencode audit subagent, or `anticonf.bridge_read` + a diff) on any exchange that made a medical assertion. The engine guarantees the envelope told the truth; this ring catches the narrator who didn't.
+
 ## Curation
+
 
 The medical knowledge lives in versioned TOML content packs, not compiled into the binary:
 
@@ -175,7 +193,7 @@ Unit-conversion math and formulas are pure functions with unit tests against pub
 
 ## Status
 
-v0.6.0 — the full loop works end to end (verified with sequential-client probes: commit → interpret → protocol → gated trial → retest → delta report), every response travels as a verifier-checked assertion envelope, causal reasoning ranks root causes from base rates + committed labs + treatment responses, `plan_workup` orders the investigation by discrimination of live causes, the advocacy layer routes it regionally (`physician_brief`, bilingual scripts, legal classes), and protocols now ground to purchasable products: the first seed maps Eftonia Skin Beauty (label-sourced: 13-strain blend + glucomannan + zinc + D) to the probiotic rung with its strain/CFU disclosure gap stated. Seeded knowledge: cystic acne graph (10 nodes), three treatment-response patterns, six investigation tests, GR region over EU and base layers. Thyroid/iron/mood graphs, more countries, and the 18 named analyte gaps are the curation queue. Ledger migrations (v4→v6) run automatically — back up `asclepius.db` before upgrading.
+v0.7.0 — the full loop works end to end (verified with sequential-client probes: commit → interpret → protocol → gated trial → retest → delta report), every response travels as a verifier-checked assertion envelope, causal reasoning ranks root causes from base rates + committed labs + treatment responses, `plan_workup` orders the investigation by discrimination of live causes, the advocacy layer routes it regionally (`physician_brief`, bilingual scripts, legal classes), protocols ground to purchasable products (Eftonia → probiotic rung, label-honest), and the external audit ring is live: every verified envelope posts to the anticonf bridge with digest, claims, evidence, and auditable numbers, so LLM narration is diffable in one pass. Seeded knowledge: cystic acne graph (10 nodes), three treatment-response patterns, six investigation tests, GR region over EU and base layers. Thyroid/iron/mood graphs, more countries, and the 18 named analyte gaps are the curation queue. Ledger migrations (v4→v6) run automatically — back up `asclepius.db` before upgrading.
 
 ## How I built this
 
