@@ -1,13 +1,19 @@
 use asclepius_core::analyte::AnalyteRegistry;
 use asclepius_core::bridge::Bridge;
+use asclepius_core::causal::{
+    self, CausalGraph, EvidenceFact, EvidenceResponse, RootCauseAnalysisInput,
+};
 use asclepius_core::conditions::{ConditionLibrary, ConditionQuery};
 use asclepius_core::derived::{
     DERIVED_IDS, FreeTInput, HomaInput, free_testosterone_vermeulen, homa_ir,
 };
+use asclepius_core::envelope::{ClaimKind, Envelope, EnvelopeBuilder};
 use asclepius_core::interventions::{
     FLAG_REQUIRES_BASELINE_LABS, InterventionLibrary, ProtocolInput, propose,
 };
+use asclepius_core::investigate::{PlanWorkupInput, TestLibrary, plan_workup};
 use asclepius_core::literature::{LiteratureInput, PubMedClient, local_search};
+use asclepius_core::packs::{self, PackIndex};
 use asclepius_core::panel::{
     AnalyteResult, CommitInput, PanelInput, normalize_panel, normalize_value,
 };
@@ -18,14 +24,16 @@ use asclepius_core::rules::{
 };
 use asclepius_core::store::{
     Db, HistoryQuery, HypothesisListInput, HypothesisRegisterInput, HypothesisUpdateInput,
-    LineageQuery, TrialBeginInput, TrialListInput, TrialLogInput, TrialReportInput,
-    TrialStatusInput,
+    LineageNode, LineageQuery, TreatmentResponseRegisterInput, TrialBeginInput, TrialListInput,
+    TrialLogInput, TrialReportInput, TrialStatusInput,
 };
+use asclepius_core::verify::verify_claims;
 use asclepius_core::{NAME, VERSION};
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::model::{CallToolResult, ContentBlock, Implementation, ServerCapabilities, ServerConfig};
 use rmcp::transport::stdio;
 use rmcp::{ErrorData as McpError, ServerHandler, ServiceExt, tool, tool_handler, tool_router};
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -37,9 +45,12 @@ struct Asclepius {
     conditions: Arc<ConditionLibrary>,
     interventions: Arc<InterventionLibrary>,
     triage: Arc<TriageSet>,
+    causal: Arc<CausalGraph>,
+    tests: Arc<TestLibrary>,
     pubmed: Arc<PubMedClient>,
     bridge: Arc<Bridge>,
     db: Arc<Db>,
+    packs: Arc<PackIndex>,
 }
 
 fn data_home() -> PathBuf {
@@ -69,17 +80,92 @@ fn json_content(value: serde_json::Value) -> Result<ContentBlock, McpError> {
     ContentBlock::json(value).map_err(|e| McpError::internal_error(e.to_string(), None))
 }
 
+fn inputs_map(inputs: &serde_json::Value) -> BTreeMap<String, serde_json::Value> {
+    let mut map = BTreeMap::new();
+    if let Some(obj) = inputs.as_object() {
+        for (k, v) in obj {
+            map.insert(k.clone(), v.clone());
+        }
+    }
+    map
+}
+
+fn lineage_claims(node: &LineageNode, b: &mut EnvelopeBuilder) {
+    b.claim(
+        ClaimKind::Measured,
+        format!("fact {}: {} {}", node.fact.analyte, node.fact.value, node.fact.unit),
+        serde_json::to_value(&node.fact).unwrap_or(serde_json::Value::Null),
+        vec![format!("ledger:facts/{}", node.fact.id)],
+    );
+    for input in &node.inputs {
+        lineage_claims(input, b);
+    }
+}
+
 #[tool_router]
 impl Asclepius {
-    #[tool(description = "Liveness probe: server identity, version, and loaded knowledge counts.")]
+    #[tool(
+        description = "Liveness probe: server identity, version, patient scope, envelope schema, loaded knowledge counts, and any packs excluded by the load gate (degraded mode is reported here, never silent)."
+    )]
     fn ping(&self) -> Result<CallToolResult, McpError> {
-        let payload = serde_json::json!({
-            "server": NAME,
-            "version": VERSION,
-            "analytes_loaded": self.registry.all().len(),
-            "ranges_loaded": self.ranges.len(),
-        });
-        Ok(CallToolResult::success(vec![json_content(payload)?]))
+        let mut b = self.builder("ping");
+        b.claim(
+            ClaimKind::Meta,
+            "server identity",
+            serde_json::json!(NAME),
+            vec!["engine:self".into()],
+        )
+        .claim(
+            ClaimKind::Meta,
+            "server version",
+            serde_json::json!(VERSION),
+            vec!["engine:self".into()],
+        )
+        .claim(
+            ClaimKind::Meta,
+            "envelope schema version",
+            serde_json::json!(asclepius_core::envelope::ENVELOPE_SCHEMA_VERSION),
+            vec!["engine:self".into()],
+        )
+        .claim(
+            ClaimKind::Meta,
+            "patient scope",
+            serde_json::json!(self.db.patient()),
+            vec!["engine:patient".into()],
+        )
+        .claim(
+            ClaimKind::Meta,
+            "loaded knowledge counts",
+            serde_json::json!({
+                "analytes": self.registry.all().len(),
+                "ranges": self.ranges.len(),
+                "rules": self.rules.len(),
+                "condition_cards": self.conditions.all().len(),
+                "interventions": self.interventions.all().len(),
+                "triage_rules": self.triage.len(),
+            }),
+            vec![
+                "pack:analytes".into(),
+                "pack:ranges".into(),
+                "pack:rules".into(),
+                "pack:conditions".into(),
+                "pack:interventions".into(),
+                "pack:triage".into(),
+            ],
+        )
+        .claim(
+            ClaimKind::Meta,
+            "packs excluded by the load gate (degraded mode)",
+            serde_json::json!(self.packs.excluded()),
+            vec!["engine:packs".into()],
+        )
+        .claim(
+            ClaimKind::Meta,
+            "knowledge gaps: analytes suggested/listed but not yet defined (curation queue)",
+            serde_json::json!(self.packs.gaps()),
+            vec!["engine:packs".into()],
+        );
+        self.finish(b)
     }
 
     #[tool(
@@ -87,9 +173,14 @@ impl Asclepius {
     )]
     fn profile_get(&self) -> Result<CallToolResult, McpError> {
         let profile = self.db.profile().map_err(domain_error)?;
-        let payload = serde_json::to_value(&profile)
-            .map_err(|e| McpError::internal_error(e.to_string(), None))?;
-        Ok(CallToolResult::success(vec![json_content(payload)?]))
+        let mut b = self.builder("profile_get");
+        b.claim(
+            ClaimKind::Reported,
+            "current patient profile as reported by the user",
+            serde_json::to_value(&profile).unwrap_or(serde_json::Value::Null),
+            vec!["ledger:profile".into()],
+        );
+        self.finish(b)
     }
 
     #[tool(
@@ -102,9 +193,14 @@ impl Asclepius {
         let mut profile = self.db.profile().map_err(domain_error)?;
         profile.apply(&update);
         self.db.set_profile(&profile).map_err(domain_error)?;
-        let payload = serde_json::to_value(&profile)
-            .map_err(|e| McpError::internal_error(e.to_string(), None))?;
-        Ok(CallToolResult::success(vec![json_content(payload)?]))
+        let mut b = self.builder("profile_set");
+        b.claim(
+            ClaimKind::Reported,
+            "patient profile after this update, as stored in the ledger",
+            serde_json::to_value(&profile).unwrap_or(serde_json::Value::Null),
+            vec!["ledger:profile".into()],
+        );
+        self.finish(b)
     }
 
     #[tool(
@@ -118,6 +214,7 @@ impl Asclepius {
             note,
         }): Parameters<CommitInput>,
     ) -> Result<CallToolResult, McpError> {
+        let today = self.packs.today.clone();
         let profile = self.db.profile().map_err(domain_error)?;
         let mut valid: Vec<AnalyteResult> = Vec::new();
         let mut rejected: Vec<serde_json::Value> = Vec::new();
@@ -131,9 +228,17 @@ impl Asclepius {
             }
         }
         let refs: Vec<&AnalyteResult> = valid.iter().collect();
-        let (panel_id, ids) = if refs.is_empty() {
-            (serde_json::Value::Null, Vec::new())
-        } else {
+        let mut b = self.builder("lab_commit");
+        if refs.is_empty() && rejected.is_empty() {
+            b.abstention(
+                "lab_commit",
+                "empty panel: nothing to commit",
+                vec!["at least one {analyte, value}".into()],
+            );
+            return self.finish(b);
+        }
+        let committed_count = valid.len();
+        if !refs.is_empty() {
             let (pid, ids) = self
                 .db
                 .commit_panel(
@@ -143,33 +248,52 @@ impl Asclepius {
                     "lab_report",
                 )
                 .map_err(domain_error)?;
-            (serde_json::json!(pid), ids)
-        };
-        let committed: Vec<serde_json::Value> = valid
-            .into_iter()
-            .zip(ids)
-            .map(|(res, id)| {
+            b.claim(
+                ClaimKind::Meta,
+                "panel committed to the append-only ledger",
                 serde_json::json!({
-                    "id": id,
-                    "analyte": res.analyte_id,
-                    "canonical_value": res.canonical_value,
-                    "canonical_unit": res.canonical_unit.label(),
-                    "assessments": res.assessments,
-                    "warnings": res.warnings,
-                })
-            })
-            .collect();
-        let committed_count = committed.len();
-        let rejected_count = rejected.len();
+                    "panel_id": pid,
+                    "committed": committed_count,
+                    "rejected": rejected.len(),
+                }),
+                vec![format!("ledger:panels/{pid}")],
+            );
+            for (res, id) in valid.into_iter().zip(ids) {
+                b.claim(
+                    ClaimKind::Measured,
+                    format!(
+                        "{} = {} {} (committed)",
+                        res.analyte_id, res.canonical_value, res.canonical_unit.label()
+                    ),
+                    serde_json::json!({
+                        "analyte": res.analyte_id,
+                        "value": res.canonical_value,
+                        "unit": res.canonical_unit.label(),
+                        "display_name": res.display_name,
+                        "assessments": res.assessments,
+                        "warnings": res.warnings,
+                    }),
+                    vec![format!("ledger:facts/{id}")],
+                )
+                .mark_stale_from_value(&today);
+            }
+        }
+        for r in &rejected {
+            b.claim(
+                ClaimKind::Meta,
+                format!("rejected: {}", r["analyte"].as_str().unwrap_or("?")),
+                r.clone(),
+                vec!["gate:normalize".into()],
+            );
+        }
         self.bridge.post(
             "status",
             &format!(
-                "panel committed: {committed_count} analytes stored, {rejected_count} rejected"
+                "panel committed: {committed_count} analytes stored, {} rejected",
+                rejected.len()
             ),
         );
-        Ok(CallToolResult::success(vec![json_content(
-            serde_json::json!({ "panel_id": panel_id, "committed": committed, "rejected": rejected }),
-        )?]))
+        self.finish(b)
     }
 
     #[tool(
@@ -179,40 +303,62 @@ impl Asclepius {
         &self,
         Parameters(HistoryQuery { analyte, limit }): Parameters<HistoryQuery>,
     ) -> Result<CallToolResult, McpError> {
+        let today = self.packs.today.clone();
         let profile = self.db.profile().map_err(domain_error)?;
         let limit = limit.unwrap_or(50).clamp(1, 500);
         let rows = self
             .db
             .history(analyte.as_deref(), limit)
             .map_err(domain_error)?;
-        let facts: Vec<serde_json::Value> = rows
-            .iter()
-            .map(|r| serde_json::to_value(r).unwrap_or(serde_json::Value::Null))
-            .collect();
-        let latest = rows.last();
-        let latest_assessments: Vec<serde_json::Value> = latest
-            .map(|r| {
-                self.ranges
-                    .assess(&r.analyte, profile.sex, profile.age_years, r.value)
-                    .into_iter()
-                    .filter_map(|a| serde_json::to_value(a).ok())
-                    .collect()
-            })
-            .unwrap_or_default();
-        let trend = if rows.len() >= 2 {
-            let first = &rows[0];
+        let mut b = self.builder("lab_history");
+        if rows.is_empty() {
+            b.abstention(
+                "lab_history",
+                "no committed facts match this query",
+                vec![analyte.unwrap_or_else(|| "any analyte".into())],
+            );
+            return self.finish(b);
+        }
+        for r in &rows {
+            b.claim(
+                ClaimKind::Measured,
+                format!("{}: {} {}", r.analyte, r.value, r.unit),
+                serde_json::to_value(r).unwrap_or(serde_json::Value::Null),
+                vec![format!("ledger:facts/{}", r.id)],
+            );
+        }
+        let latest = rows.last().unwrap();
+        let assessments = self
+            .ranges
+            .assess(&latest.analyte, profile.sex, profile.age_years, latest.value);
+        b.claim(
+            ClaimKind::Inferred,
+            format!("range assessments for latest {} value", latest.analyte),
             serde_json::json!({
-                "analyte": latest.map(|l| l.analyte.clone()).unwrap_or_default(),
-                "first_value": first.value,
-                "latest_value": latest.map(|l| l.value).unwrap_or_default(),
-                "n_points": rows.len(),
-            })
-        } else {
-            serde_json::Value::Null
-        };
-        Ok(CallToolResult::success(vec![json_content(
-            serde_json::json!({ "facts": facts, "latest_assessments": latest_assessments, "trend": trend }),
-        )?]))
+                "analyte": latest.analyte,
+                "assessments": assessments,
+            }),
+            vec![format!("ledger:facts/{}", latest.id), "pack:ranges".into()],
+        )
+        .mark_stale_from_value(&today);
+        if rows.len() >= 2 {
+            let first = &rows[0];
+            b.claim(
+                ClaimKind::Meta,
+                format!("trend for {}", latest.analyte),
+                serde_json::json!({
+                    "analyte": latest.analyte,
+                    "first_value": first.value,
+                    "latest_value": latest.value,
+                    "n_points": rows.len(),
+                }),
+                vec![
+                    format!("ledger:facts/{}", first.id),
+                    format!("ledger:facts/{}", latest.id),
+                ],
+            );
+        }
+        self.finish(b)
     }
 
     #[tool(
@@ -227,75 +373,129 @@ impl Asclepius {
             .lineage(&id, depth.unwrap_or(4))
             .map_err(domain_error)?
             .ok_or_else(|| McpError::invalid_params(format!("fact not found: {id}"), None))?;
-        let payload = serde_json::to_value(&node)
-            .map_err(|e| McpError::internal_error(e.to_string(), None))?;
-        Ok(CallToolResult::success(vec![json_content(payload)?]))
+        let mut b = self.builder("fact_lineage");
+        lineage_claims(&node, &mut b);
+        self.finish(b)
     }
 
     #[tool(
         description = "Interpret the latest committed labs against the rule base: fires severity-tagged findings with sources, computes calculated free testosterone when total T + SHBG exist, and proactively lists untested analytes the fired rules suggest investigating next. The root-cause workup engine; requires labs committed via lab_commit."
     )]
     fn interpret_panel(&self) -> Result<CallToolResult, McpError> {
+        let today = self.packs.today.clone();
         let profile = self.db.profile().map_err(domain_error)?;
-        let facts = self.db.history(None, 1000).map_err(domain_error)?;
-        let mut latest: Vec<LatestValue> = Vec::new();
-        for fact in &facts {
-            let assessments =
-                self.ranges
-                    .assess(&fact.analyte, profile.sex, profile.age_years, fact.value);
-            if let Some(slot) = latest.iter_mut().find(|l| l.analyte == fact.analyte) {
-                slot.value = fact.value;
-                slot.assessments = assessments;
-            } else {
-                latest.push(LatestValue {
-                    analyte: fact.analyte.clone(),
-                    value: fact.value,
-                    assessments,
-                });
-            }
+        if self.db.history(None, 1000).map_err(domain_error)?.is_empty() {
+            let mut b = self.builder("interpret_panel");
+            b.abstention(
+                "interpret_panel",
+                "no committed facts to interpret",
+                vec!["commit labs with lab_commit first".into()],
+            );
+            return self.finish(b);
         }
-        let interpretation = interpret(&self.rules, &latest);
-        let mut derived_candidates: Vec<serde_json::Value> = Vec::new();
-        let tt = latest.iter().find(|l| l.analyte == "testosterone_total");
-        let shbg = latest.iter().find(|l| l.analyte == "shbg");
-        let albumin = latest.iter().find(|l| l.analyte == "albumin");
-        if let (Some(tt), Some(shbg)) = (tt, shbg) {
+        let latest = self.latest_facts(&profile)?;
+        let interpretation = interpret(
+            &self.rules,
+            &latest.iter().map(|(l, _)| l.clone()).collect::<Vec<_>>(),
+        );
+        let mut b = self.builder("interpret_panel");
+        for (lv, fact_id) in &latest {
+            b.claim(
+                ClaimKind::Measured,
+                format!("latest {}: {} {}", lv.analyte, lv.value, "canonical"),
+                serde_json::json!({
+                    "analyte": lv.analyte,
+                    "value": lv.value,
+                    "assessments": lv.assessments,
+                }),
+                vec![format!("ledger:facts/{fact_id}")],
+            )
+            .mark_stale_from_value(&today);
+        }
+        for finding in &interpretation.findings {
+            b.claim(
+                ClaimKind::Inferred,
+                format!("rule fired: {}", finding.rule_id),
+                serde_json::to_value(finding).unwrap_or(serde_json::Value::Null),
+                vec![format!("id:{}", finding.rule_id), "pack:rules".into()],
+            )
+            .mark_stale_from_value(&today);
+        }
+        // Derived candidates: free T and HOMA-IR over committed facts.
+        let find = |name: &str| latest.iter().find(|(l, _)| l.analyte == name);
+        if let (Some((tt, tt_id)), Some((shbg, shbg_id))) =
+            (find("testosterone_total"), find("shbg"))
+        {
+            let albumin = find("albumin");
             let input = FreeTInput {
                 total_testosterone: tt.value,
                 total_testosterone_unit: Some("ng/dL".into()),
                 shbg: shbg.value,
                 shbg_unit: Some("nmol/L".into()),
-                albumin: albumin.map(|a| a.value),
+                albumin: albumin.map(|(a, _)| a.value),
                 albumin_unit: albumin.map(|_| "g/dL".into()),
             };
             if let Ok(derived) = free_testosterone_vermeulen(&self.registry, &input) {
-                if let Ok(v) = serde_json::to_value(&derived) {
-                    derived_candidates.push(v);
+                let mut evidence = vec![format!("ledger:facts/{tt_id}"), format!("ledger:facts/{shbg_id}")];
+                if let Some((_, alb_id)) = albumin {
+                    evidence.push(format!("ledger:facts/{alb_id}"));
                 }
+                let inputs = inputs_map(&serde_json::json!({
+                    "total_testosterone_nmol_l": derived.inputs["total_testosterone_nmol_l"],
+                    "shbg_nmol_l": derived.inputs["shbg_nmol_l"],
+                    "albumin_g_dl": derived.inputs["albumin_g_dl"],
+                }));
+                b.derived(
+                    "calculated free testosterone (Vermeulen 1999)",
+                    serde_json::to_value(&derived).unwrap_or(serde_json::Value::Null),
+                    evidence,
+                    "vermeulen1999",
+                    inputs,
+                );
             }
         }
-        let glu = latest.iter().find(|l| l.analyte == "glucose");
-        let ins = latest.iter().find(|l| l.analyte == "insulin");
-        if let (Some(g), Some(i)) = (glu, ins) {
+        if let (Some((glu, glu_id)), Some((ins, ins_id))) = (find("glucose"), find("insulin")) {
             let input = HomaInput {
-                glucose: g.value,
+                glucose: glu.value,
                 glucose_unit: Some("mg/dL".into()),
-                insulin: i.value,
+                insulin: ins.value,
                 insulin_unit: Some("uU/mL".into()),
             };
             if let Ok(derived) = homa_ir(&self.registry, &input) {
-                if let Ok(v) = serde_json::to_value(&derived) {
-                    derived_candidates.push(v);
-                }
+                let inputs = inputs_map(&serde_json::json!({
+                    "glucose_mg_dl": derived.inputs["glucose_mg_dl"],
+                    "insulin_uu_ml": derived.inputs["insulin_uu_ml"],
+                }));
+                b.derived(
+                    "calculated HOMA-IR (Matthews 1985)",
+                    serde_json::to_value(&derived).unwrap_or(serde_json::Value::Null),
+                    vec![format!("ledger:facts/{glu_id}"), format!("ledger:facts/{ins_id}")],
+                    "matthews1985",
+                    inputs,
+                );
             }
         }
-        let payload = serde_json::json!({
-            "latest_values": latest,
-            "findings": interpretation.findings,
-            "untested_suggestions": interpretation.untested_suggestions,
-            "derived_candidates": derived_candidates,
-        });
-        Ok(CallToolResult::success(vec![json_content(payload)?]))
+        if !interpretation.untested_suggestions.is_empty() {
+            let fired: Vec<String> = interpretation
+                .findings
+                .iter()
+                .map(|f| format!("id:{}", f.rule_id))
+                .collect();
+            b.claim(
+                ClaimKind::Meta,
+                "untested analytes the fired rules suggest investigating next",
+                serde_json::json!(interpretation.untested_suggestions),
+                fired,
+            );
+        }
+        if interpretation.findings.is_empty() {
+            b.abstention(
+                "interpret_panel",
+                "no rules fired: committed values sit inside every assessed range for this profile",
+                vec!["more granular rules or broader panels".into()],
+            );
+        }
+        self.finish(b)
     }
 
     #[tool(
@@ -305,19 +505,47 @@ impl Asclepius {
         &self,
         Parameters(ConditionQuery { query, limit }): Parameters<ConditionQuery>,
     ) -> Result<CallToolResult, McpError> {
+        let today = self.packs.today.clone();
         let limit = limit.unwrap_or(5).clamp(1, 20);
         let condition_hits = self.conditions.search(&query, limit);
         let intervention_hits = self.interventions.search(&query, limit);
-        let payload = serde_json::json!({
-            "query": query,
-            "condition_hits": condition_hits,
-            "intervention_hits": intervention_hits,
-        });
-        Ok(CallToolResult::success(vec![json_content(payload)?]))
+        let mut b = self.builder("explore_condition");
+        b.claim(
+            ClaimKind::Meta,
+            "search query",
+            serde_json::json!(&query),
+            vec!["query:explore_condition".into()],
+        );
+        for hit in &condition_hits {
+            b.claim(
+                ClaimKind::Curated,
+                format!("condition card: {}", hit.card.name),
+                serde_json::to_value(hit).unwrap_or(serde_json::Value::Null),
+                vec!["pack:conditions".into()],
+            )
+            .mark_stale_from_value(&today);
+        }
+        for hit in &intervention_hits {
+            b.claim(
+                ClaimKind::Curated,
+                format!("intervention card: {}", hit.card.name),
+                serde_json::to_value(hit).unwrap_or(serde_json::Value::Null),
+                vec!["pack:interventions".into()],
+            )
+            .mark_stale_from_value(&today);
+        }
+        if condition_hits.is_empty() && intervention_hits.is_empty() {
+            b.abstention(
+                "explore_condition",
+                "no condition or intervention card matched the query",
+                vec![query.clone()],
+            );
+        }
+        self.finish(b)
     }
 
     #[tool(
-        description = "Register a clinical hypothesis in the ledger, e.g. 'elevated SHBG is suppressing free T'. Hypotheses are model-inference by definition: they carry fact/rule/PMID references and a review date, and are explicitly labeled as non-facts until supported or refuted by evidence."
+        description = "Register a clinical hypothesis in the ledger, e.g. 'elevated SHBG is suppressing free T'. Hypotheses are model-inference by definition: they carry fact/rule/PMID references and a review date, and are explicitly labeled as non-facts until supported or refuted by evidence. origin: 'user' (default), 'engine', or 'agent'."
     )]
     fn hypothesis_register(
         &self,
@@ -327,9 +555,19 @@ impl Asclepius {
             return Err(McpError::invalid_params("statement is required", None));
         }
         let id = self.db.add_hypothesis(&input).map_err(domain_error)?;
-        Ok(CallToolResult::success(vec![json_content(
-            serde_json::json!({ "id": id, "status": "open", "review_by": input.review_by }),
-        )?]))
+        let mut b = self.builder("hypothesis_register");
+        b.claim(
+            ClaimKind::Meta,
+            "hypothesis registered as open in the ledger",
+            serde_json::json!({
+                "id": id,
+                "status": "open",
+                "origin": input.origin_value(),
+                "review_by": input.review_by,
+            }),
+            vec![format!("ledger:hypotheses/{id}")],
+        );
+        self.finish(b)
     }
 
     #[tool(
@@ -339,13 +577,28 @@ impl Asclepius {
         &self,
         Parameters(HypothesisListInput { status, limit }): Parameters<HypothesisListInput>,
     ) -> Result<CallToolResult, McpError> {
+        let today = self.packs.today.clone();
         let rows = self
             .db
             .hypotheses(status.as_ref(), limit.unwrap_or(20).clamp(1, 200))
             .map_err(domain_error)?;
-        let payload = serde_json::to_value(&rows)
-            .map_err(|e| McpError::internal_error(e.to_string(), None))?;
-        Ok(CallToolResult::success(vec![json_content(payload)?]))
+        let mut b = self.builder("hypothesis_list");
+        if rows.is_empty() {
+            b.abstention(
+                "hypothesis_list",
+                "no hypotheses match this filter",
+                vec!["register hypotheses with hypothesis_register".into()],
+            );
+            return self.finish(b);
+        }
+        b.claim(
+            ClaimKind::Meta,
+            "ledger hypotheses, newest first",
+            serde_json::to_value(&rows).unwrap_or(serde_json::Value::Null),
+            vec!["ledger:hypotheses".into()],
+        )
+        .mark_stale_from_value(&today);
+        self.finish(b)
     }
 
     #[tool(
@@ -365,9 +618,281 @@ impl Asclepius {
                 None,
             ));
         }
-        Ok(CallToolResult::success(vec![json_content(
+        let mut b = self.builder("hypothesis_update");
+        b.claim(
+            ClaimKind::Meta,
+            "hypothesis status updated",
             serde_json::json!({ "id": id, "status": status.as_str() }),
-        )?]))
+            vec![format!("ledger:hypotheses/{id}")],
+        );
+        self.finish(b)
+    }
+
+    #[tool(
+        description = "Root-cause analysis over the causal graph: ranks the candidate root causes of a condition (e.g. \"acne_root_causes\") by evidence — graph base rates, committed lab facts against each cause's probes (matching status adds, contradicting subtracts), and registered treatment responses as Bayesian-style shifts. Every score carries its full contribution trail and a coverage ratio; untested probes are listed per cause. Proposal-mode: suggested hypotheses are registration-ready payloads for hypothesis_register — the engine proposes, you dispose."
+    )]
+    fn root_cause_analysis(
+        &self,
+        Parameters(input): Parameters<RootCauseAnalysisInput>,
+    ) -> Result<CallToolResult, McpError> {
+        let today = self.packs.today.clone();
+        let known: Vec<&str> = self
+            .conditions
+            .all()
+            .iter()
+            .map(|c| c.id.as_str())
+            .collect();
+        if !known.contains(&input.condition.as_str()) {
+            return Err(McpError::invalid_params(
+                format!(
+                    "unknown condition: {}. known cards: {}",
+                    input.condition,
+                    known.join(", ")
+                ),
+                None,
+            ));
+        }
+        if !self.causal.has_condition(&input.condition) {
+            let mut b = self.builder("root_cause_analysis");
+            b.abstention(
+                "root_cause_analysis",
+                format!(
+                    "no causal graph exists for '{}' yet — the condition card has prose but no traversable nodes",
+                    input.condition
+                ),
+                vec![format!("curate content-packs/causal/ for {}", input.condition)],
+            );
+            return self.finish(b);
+        }
+        let profile = self.db.profile().map_err(domain_error)?;
+        let latest = self.latest_facts(&profile)?;
+        let facts: Vec<EvidenceFact> = latest
+            .iter()
+            .map(|(lv, id)| EvidenceFact {
+                fact_id: id.clone(),
+                latest: lv.clone(),
+            })
+            .collect();
+        let responses: Vec<EvidenceResponse> = self
+            .db
+            .treatment_responses(200)
+            .map_err(domain_error)?
+            .into_iter()
+            .map(|row| EvidenceResponse {
+                ledger_id: row.id,
+                response_id: row.response_id,
+            })
+            .collect();
+        let analysis = causal::analyze(&self.causal, &input.condition, &facts, &responses);
+        let mut b = self.builder("root_cause_analysis");
+        b.claim(
+            ClaimKind::Meta,
+            "condition under analysis and evidence coverage",
+            serde_json::json!({
+                "condition": analysis.condition,
+                "candidate_causes": analysis.causes.len(),
+                "coverage": analysis.coverage,
+                "committed_facts": facts.len(),
+                "registered_treatment_responses": responses.len(),
+            }),
+            vec!["pack:causal".into()],
+        );
+        for cause in &analysis.causes {
+            let mut evidence = vec![format!("id:{}", cause.node), "pack:causal".into()];
+            for c in &cause.contributions {
+                evidence.push(c.source.clone());
+            }
+            b.claim(
+                ClaimKind::Inferred,
+                format!("{}: score {:.2} (base {:.2})", cause.name, cause.score, cause.base),
+                serde_json::to_value(cause).unwrap_or(serde_json::Value::Null),
+                evidence,
+            )
+            .mark_stale_from_value(&today)
+            .tier(&cause.tier);
+        }
+        b.claim(
+            ClaimKind::Meta,
+            "registration-ready hypotheses (proposal-mode: commit accepted ones via hypothesis_register)",
+            serde_json::json!(analysis
+                .causes
+                .iter()
+                .map(|c| serde_json::json!({
+                    "statement": c.suggested_hypothesis,
+                    "origin": "user",
+                    "note": "engine-proposed via root_cause_analysis",
+                }))
+                .collect::<Vec<_>>()),
+            vec!["pack:causal".into()],
+        );
+        if analysis.causes.is_empty() {
+            b.abstention(
+                "root_cause_analysis",
+                "graph has no candidate root causes for this condition",
+                vec![input.condition.clone()],
+            );
+        }
+        self.finish(b)
+    }
+
+    #[tool(
+        description = "Register a treatment response the patient actually experienced, e.g. antibiotics cleared the acne and it recurred within months (response_id: antibiotic_transient_clearance). The pattern's effects shift the causal graph's root-cause scores: treatment history is diagnostic evidence. Response ids and their patterns come from the treatment-responses pack — call with no arguments to see the error listing known patterns."
+    )]
+    fn treatment_response_register(
+        &self,
+        Parameters(input): Parameters<TreatmentResponseRegisterInput>,
+    ) -> Result<CallToolResult, McpError> {
+        let today = self.packs.today.clone();
+        let Some(pattern) = self.causal.get_response(&input.response_id) else {
+            let ids: Vec<&str> = self.causal.responses().iter().map(|r| r.id.as_str()).collect();
+            return Err(McpError::invalid_params(
+                format!(
+                    "unknown response pattern: {}. known patterns: {}",
+                    input.response_id,
+                    ids.join(", ")
+                ),
+                None,
+            ));
+        };
+        let id = self
+            .db
+            .add_treatment_response(&input)
+            .map_err(domain_error)?;
+        let mut b = self.builder("treatment_response_register");
+        b.claim(
+            ClaimKind::Curated,
+            format!("pattern: {}", pattern.name),
+            serde_json::json!({
+                "id": pattern.id,
+                "name": pattern.name,
+                "pattern": pattern.pattern,
+                "effects": pattern.effects,
+                "tier": pattern.tier,
+                "sources": pattern.sources,
+                "review_by": pattern.review_by,
+            }),
+            vec!["pack:treatment-responses".into()],
+        )
+        .mark_stale_from_value(&today)
+        .tier(&pattern.tier);
+        b.claim(
+            ClaimKind::Meta,
+            "treatment response committed to the ledger as diagnostic evidence",
+            serde_json::json!({
+                "ledger_id": id,
+                "response_id": input.response_id,
+                "note": input.note,
+            }),
+            vec![format!("ledger:treatment_responses/{id}")],
+        );
+        self.finish(b)
+    }
+
+    #[tool(
+        description = "Workup planner: ranks investigation tests by expected discrimination between the live root-cause hypotheses of a condition (e.g. \"acne_root_causes\") — discrimination = Σ (cause score × test resolution), divided by cost band. Each recommendation names which causes it probes at their current scores, specimen, availability notes, and honest caveats; causes with no covering test are surfaced as gaps. Region-scoped routing (which doctor orders it, how to get it covered) arrives with the pathways pack."
+    )]
+    fn plan_workup(
+        &self,
+        Parameters(input): Parameters<PlanWorkupInput>,
+    ) -> Result<CallToolResult, McpError> {
+        let today = self.packs.today.clone();
+        let known: Vec<&str> = self
+            .conditions
+            .all()
+            .iter()
+            .map(|c| c.id.as_str())
+            .collect();
+        if !known.contains(&input.condition.as_str()) {
+            return Err(McpError::invalid_params(
+                format!(
+                    "unknown condition: {}. known cards: {}",
+                    input.condition,
+                    known.join(", ")
+                ),
+                None,
+            ));
+        }
+        if !self.causal.has_condition(&input.condition) {
+            let mut b = self.builder("plan_workup");
+            b.abstention(
+                "plan_workup",
+                format!(
+                    "no causal graph exists for '{}' — nothing to discriminate",
+                    input.condition
+                ),
+                vec![format!("curate content-packs/causal/ for {}", input.condition)],
+            );
+            return self.finish(b);
+        }
+        let profile = self.db.profile().map_err(domain_error)?;
+        let latest = self.latest_facts(&profile)?;
+        let facts: Vec<EvidenceFact> = latest
+            .iter()
+            .map(|(lv, id)| EvidenceFact {
+                fact_id: id.clone(),
+                latest: lv.clone(),
+            })
+            .collect();
+        let responses: Vec<EvidenceResponse> = self
+            .db
+            .treatment_responses(200)
+            .map_err(domain_error)?
+            .into_iter()
+            .map(|row| EvidenceResponse {
+                ledger_id: row.id,
+                response_id: row.response_id,
+            })
+            .collect();
+        let analysis = causal::analyze(&self.causal, &input.condition, &facts, &responses);
+        let plan = plan_workup(&self.tests, &analysis);
+        let mut b = self.builder("plan_workup");
+        b.claim(
+            ClaimKind::Meta,
+            "workup target and planner inputs",
+            serde_json::json!({
+                "condition": plan.condition,
+                "candidate_causes": analysis.causes.len(),
+                "coverage": analysis.coverage,
+                "tests_ranked": plan.ranked_tests.len(),
+                "tests_in_library": self.tests.all().len(),
+            }),
+            vec!["pack:tests".into(), "pack:causal".into()],
+        );
+        for test in &plan.ranked_tests {
+            let mut evidence = vec![format!("id:{}", test.id), "pack:tests".into()];
+            for probed in &test.probes_causes {
+                evidence.push(format!("id:{}", probed.node));
+            }
+            b.claim(
+                ClaimKind::Inferred,
+                format!(
+                    "{}: discrimination {:.2} (rank {:.2}, {} cost)",
+                    test.name, test.discrimination, test.rank_value, test.cost_band
+                ),
+                serde_json::to_value(test).unwrap_or(serde_json::Value::Null),
+                evidence,
+            )
+            .mark_stale_from_value(&today)
+            .tier(&test.tier);
+        }
+        for uncovered in &plan.untestable_causes {
+            b.abstention(
+                format!("plan_workup:{}", uncovered.node),
+                format!(
+                    "no available test discriminates '{}' (score {:.2}); {}",
+                    uncovered.name, uncovered.cause_score, uncovered.note
+                ),
+                vec![format!("test covering {}", uncovered.node)],
+            );
+        }
+        if plan.ranked_tests.is_empty() && plan.untestable_causes.is_empty() {
+            b.abstention(
+                "plan_workup",
+                "no candidate causes and no applicable tests for this condition",
+                vec![input.condition.clone()],
+            );
+        }
+        self.finish(b)
     }
 
     #[tool(
@@ -404,11 +929,60 @@ impl Asclepius {
                 None,
             ));
         }
+        let today = self.packs.today.clone();
         let profile = self.db.profile().map_err(domain_error)?;
         let proposal = propose(&self.interventions, &targets, &profile);
-        let payload = serde_json::to_value(&proposal)
-            .map_err(|e| McpError::internal_error(e.to_string(), None))?;
-        Ok(CallToolResult::success(vec![json_content(payload)?]))
+        let mut b = self.builder("propose_protocol");
+        b.claim(
+            ClaimKind::Meta,
+            "requested targets",
+            serde_json::json!(&targets),
+            vec!["query:propose_protocol".into()],
+        );
+        for item in &proposal.items {
+            b.claim(
+                ClaimKind::Curated,
+                format!("protocol rung: {} ({})", item.name, item.category),
+                serde_json::to_value(item).unwrap_or(serde_json::Value::Null),
+                vec!["pack:interventions".into()],
+            )
+            .mark_stale_from_value(&today)
+            .tier(&item.tier);
+        }
+        for ex in &proposal.excluded {
+            b.claim(
+                ClaimKind::Inferred,
+                format!("excluded by profile screening: {}", ex.name),
+                serde_json::to_value(ex).unwrap_or(serde_json::Value::Null),
+                vec!["pack:interventions".into(), "ledger:profile".into()],
+            );
+        }
+        b.claim(
+            ClaimKind::Meta,
+            "interactions between proposed items",
+            serde_json::json!(&proposal.interactions),
+            vec!["pack:interventions".into()],
+        )
+        .claim(
+            ClaimKind::Meta,
+            "serotonergic burden watch",
+            serde_json::json!(&proposal.serotonergic_burden),
+            vec!["pack:interventions".into()],
+        )
+        .claim(
+            ClaimKind::Meta,
+            "guardrail disclaimer",
+            serde_json::json!(&proposal.disclaimer),
+            vec!["engine:guardrails".into()],
+        );
+        if proposal.items.is_empty() && proposal.excluded.is_empty() {
+            b.abstention(
+                "propose_protocol",
+                "no interventions in the packs target these conditions",
+                vec![targets.join(", ")],
+            );
+        }
+        self.finish(b)
     }
 
     #[tool(
@@ -435,12 +1009,36 @@ impl Asclepius {
                 &format!("triage {}: {}", hit.rule_id, hit.message),
             );
         }
-        let payload = serde_json::json!({
-            "hits": hits,
-            "clear": hits.is_empty(),
-            "note": if hits.is_empty() { "no red-flag patterns matched; proceed with root-cause work" } else { "red-flag pattern(s) matched: address conventional care first" },
-        });
-        Ok(CallToolResult::success(vec![json_content(payload)?]))
+        let mut b = self.builder("triage_check");
+        let mut hit_refs: Vec<String> = Vec::new();
+        for hit in &hits {
+            hit_refs.push(format!("id:{}", hit.rule_id));
+            b.claim(
+                ClaimKind::Inferred,
+                format!("red-flag pattern matched: {}", hit.rule_id),
+                serde_json::to_value(hit).unwrap_or(serde_json::Value::Null),
+                vec![format!("id:{}", hit.rule_id), "pack:triage".into()],
+            );
+        }
+        if hits.is_empty() {
+            b.claim(
+                ClaimKind::Meta,
+                "triage clear: no red-flag patterns matched",
+                serde_json::json!({ "clear": true }),
+                vec!["engine:triage".into()],
+            );
+        } else {
+            b.claim(
+                ClaimKind::Meta,
+                "red-flag patterns matched: address conventional care first",
+                serde_json::json!({
+                    "clear": false,
+                    "count": hits.len(),
+                }),
+                hit_refs,
+            );
+        }
+        self.finish(b)
     }
 
     #[tool(
@@ -453,6 +1051,7 @@ impl Asclepius {
         if claim.trim().is_empty() {
             return Err(McpError::invalid_params("claim is required", None));
         }
+        let today = self.packs.today.clone();
         let limit = max_results.unwrap_or(5).clamp(1, 20);
         let local_hits = local_search(
             &self.conditions,
@@ -472,13 +1071,48 @@ impl Asclepius {
                 Err(e) => serde_json::json!({ "enabled": true, "error": e }),
             }
         };
-        let payload = serde_json::json!({
-            "claim": claim,
-            "local_hits": local_hits,
-            "pubmed": pubmed_section,
-            "instruction_to_caller": "evidence only — you decide supports/contradicts/neutral; cite local hit ids or PMIDs for any assertion you make",
-        });
-        Ok(CallToolResult::success(vec![json_content(payload)?]))
+        let mut b = self.builder("literature_verify");
+        b.claim(
+            ClaimKind::Meta,
+            "claim under verification",
+            serde_json::json!(&claim),
+            vec!["query:literature_verify".into()],
+        );
+        for hit in &local_hits {
+            let pack_ref = match hit.kind.as_str() {
+                "condition" => "pack:conditions",
+                "rule" => "pack:rules",
+                "intervention" => "pack:interventions",
+                _ => "pack:rules",
+            };
+            b.claim(
+                ClaimKind::Curated,
+                format!("local evidence: {} {}", hit.kind, hit.id),
+                serde_json::to_value(hit).unwrap_or(serde_json::Value::Null),
+                vec![pack_ref.into()],
+            )
+            .mark_stale_from_value(&today);
+        }
+        b.claim(
+            ClaimKind::Meta,
+            "PubMed section (opt-in egress)",
+            pubmed_section,
+            vec!["pubmed:query".into()],
+        )
+        .claim(
+            ClaimKind::Meta,
+            "instruction to caller",
+            serde_json::json!("evidence only — you decide supports/contradicts/neutral; cite local hit ids or PMIDs for any assertion you make"),
+            vec!["engine:self".into()],
+        );
+        if local_hits.is_empty() {
+            b.abstention(
+                "literature_verify",
+                "local knowledge base has no entry relevant to this claim",
+                vec![claim.clone()],
+            );
+        }
+        self.finish(b)
     }
 
     #[tool(
@@ -579,13 +1213,30 @@ impl Asclepius {
         }
         let id = self
             .db
-            .begin_trial(&input, &card.name, baseline_ids)
+            .begin_trial(&input, &card.name, baseline_ids.clone())
             .map_err(domain_error)?;
         self.bridge
             .post("status", &format!("trial begun: {} ({})", card.name, id));
-        Ok(CallToolResult::success(vec![json_content(
-            serde_json::json!({ "id": id, "status": "planned", "baseline_fact_ids": self.db.get_trial(&id).ok().flatten().and_then(|t| t.baseline_fact_ids) }),
-        )?]))
+        let mut b = self.builder("trial_begin");
+        b.claim(
+            ClaimKind::Meta,
+            format!("n=1 trial of {} registered as planned", card.name),
+            serde_json::json!({
+                "id": id,
+                "intervention": card.name,
+                "status": "planned",
+                "baseline_fact_ids": baseline_ids,
+            }),
+            vec![format!("ledger:trials/{id}")],
+        );
+        if !missing.is_empty() {
+            b.abstention(
+                "trial_begin",
+                "some outcome analytes have no baseline facts; deltas will be partial",
+                missing.clone(),
+            );
+        }
+        self.finish(b)
     }
 
     #[tool(
@@ -607,9 +1258,14 @@ impl Asclepius {
             ));
         }
         self.db.append_trial_log(&input).map_err(domain_error)?;
-        Ok(CallToolResult::success(vec![json_content(
-            serde_json::json!({ "ok": true }),
-        )?]))
+        let mut b = self.builder("trial_log");
+        b.claim(
+            ClaimKind::Meta,
+            format!("log entry appended to {}", input.trial_id),
+            serde_json::json!({ "ok": true, "kind": input.kind }),
+            vec![format!("ledger:trials/{}", input.trial_id)],
+        );
+        self.finish(b)
     }
 
     #[tool(
@@ -635,9 +1291,14 @@ impl Asclepius {
             "status",
             &format!("trial {} -> {}", input.trial_id, input.status.as_str()),
         );
-        let payload = serde_json::to_value(&row)
-            .map_err(|e| McpError::internal_error(e.to_string(), None))?;
-        Ok(CallToolResult::success(vec![json_content(payload)?]))
+        let mut b = self.builder("trial_update_status");
+        b.claim(
+            ClaimKind::Meta,
+            format!("trial {} status now {}", row.id, row.status.as_str()),
+            serde_json::to_value(&row).unwrap_or(serde_json::Value::Null),
+            vec![format!("ledger:trials/{}", row.id)],
+        );
+        self.finish(b)
     }
 
     #[tool(
@@ -648,13 +1309,26 @@ impl Asclepius {
         Parameters(TrialListInput { status }): Parameters<TrialListInput>,
     ) -> Result<CallToolResult, McpError> {
         let rows = self.db.trials(status, 50).map_err(domain_error)?;
-        let payload = serde_json::to_value(&rows)
-            .map_err(|e| McpError::internal_error(e.to_string(), None))?;
-        Ok(CallToolResult::success(vec![json_content(payload)?]))
+        let mut b = self.builder("trial_list");
+        if rows.is_empty() {
+            b.abstention(
+                "trial_list",
+                "no trials match this filter",
+                vec!["begin trials with trial_begin".into()],
+            );
+            return self.finish(b);
+        }
+        b.claim(
+            ClaimKind::Meta,
+            "n=1 trials, newest first",
+            serde_json::to_value(&rows).unwrap_or(serde_json::Value::Null),
+            vec!["ledger:trials".into()],
+        );
+        self.finish(b)
     }
 
     #[tool(
-        description = "Full n=1 trial report: trial row, chronological log, and outcome comparison — baseline fact values vs latest committed values per outcome analyte, with deltas. Commit retest labs with lab_commit, then read this."
+        description = "Full n=1 trial report: trial row, chronological log, and outcome comparison — baseline fact values vs latest committed values per outcome analyte, with deltas recomputed and independently verified. Commit retest labs with lab_commit, then read this. Reminder: n=1 trials are unblinded — regression to the mean, placebo, and natural course are always live explanations for improvement."
     )]
     fn trial_report(
         &self,
@@ -668,7 +1342,19 @@ impl Asclepius {
                 McpError::invalid_params(format!("trial not found: {trial_id}"), None)
             })?;
         let log = self.db.trial_log_entries(&trial_id).map_err(domain_error)?;
-        let mut outcomes = Vec::new();
+        let mut b = self.builder("trial_report");
+        b.claim(
+            ClaimKind::Meta,
+            "trial record",
+            serde_json::to_value(&row).unwrap_or(serde_json::Value::Null),
+            vec![format!("ledger:trials/{trial_id}")],
+        )
+        .claim(
+            ClaimKind::Meta,
+            "chronological trial log",
+            serde_json::to_value(&log).unwrap_or(serde_json::Value::Null),
+            vec![format!("ledger:trials/{trial_id}")],
+        );
         for analyte in &row.outcome_analytes {
             let baseline = row
                 .baseline_fact_ids
@@ -676,22 +1362,71 @@ impl Asclepius {
                 .and_then(|ids| ids.first())
                 .and_then(|id| self.db.get_fact(id).ok().flatten());
             let latest = self.db.latest_fact(analyte).ok().flatten();
-            outcomes.push(serde_json::json!({
-                "analyte": analyte,
-                "baseline": baseline.as_ref().map(|f| serde_json::json!({"value": f.value, "unit": f.unit, "collected_at": f.collected_at})),
-                "latest": latest.as_ref().map(|f| serde_json::json!({"value": f.value, "unit": f.unit, "collected_at": f.collected_at})),
-                "delta": match (baseline.as_ref(), latest.as_ref()) {
-                    (Some(b), Some(l)) => Some(l.value - b.value),
-                    _ => None,
-                },
-            }));
+            if let Some(base) = &baseline {
+                b.claim(
+                    ClaimKind::Measured,
+                    format!("baseline {}: {} {}", analyte, base.value, base.unit),
+                    serde_json::json!({
+                        "analyte": analyte,
+                        "role": "baseline",
+                        "value": base.value,
+                        "unit": base.unit,
+                        "collected_at": base.collected_at,
+                    }),
+                    vec![format!("ledger:facts/{}", base.id)],
+                );
+            }
+            if let Some(last) = &latest {
+                b.claim(
+                    ClaimKind::Measured,
+                    format!("latest {}: {} {}", analyte, last.value, last.unit),
+                    serde_json::json!({
+                        "analyte": analyte,
+                        "role": "latest",
+                        "value": last.value,
+                        "unit": last.unit,
+                        "collected_at": last.collected_at,
+                    }),
+                    vec![format!("ledger:facts/{}", last.id)],
+                );
+            }
+            if let (Some(base), Some(last)) = (&baseline, &latest) {
+                let mut inputs = BTreeMap::new();
+                inputs.insert("baseline".into(), serde_json::json!(base.value));
+                inputs.insert("latest".into(), serde_json::json!(last.value));
+                b.derived(
+                    format!("delta for {analyte} (latest minus baseline)"),
+                    serde_json::json!({
+                        "analyte": analyte,
+                        "value": last.value - base.value,
+                        "unit": last.unit,
+                    }),
+                    vec![
+                        format!("ledger:facts/{}", base.id),
+                        format!("ledger:facts/{}", last.id),
+                    ],
+                    "delta",
+                    inputs,
+                );
+            }
+            if baseline.is_none() && latest.is_none() {
+                b.abstention(
+                    format!("trial_report:{analyte}"),
+                    "no baseline or latest facts for this outcome analyte",
+                    vec![format!("commit {analyte} values")],
+                );
+            }
         }
-        let payload = serde_json::json!({
-            "trial": row,
-            "log": log,
-            "outcomes": outcomes,
-        });
-        Ok(CallToolResult::success(vec![json_content(payload)?]))
+        // The n=1 honesty boilerplate travels with every report, by design.
+        b.claim(
+            ClaimKind::Meta,
+            "n=1 caution",
+            serde_json::json!(
+                "unblinded single-subject trial: regression to the mean, placebo response, and natural course remain live explanations; deltas are observations, not proof of mechanism"
+            ),
+            vec!["engine:guardrails".into()],
+        );
+        self.finish(b)
     }
 
     #[tool(
@@ -701,49 +1436,177 @@ impl Asclepius {
         &self,
         Parameters(PanelInput { panel }): Parameters<PanelInput>,
     ) -> Result<CallToolResult, McpError> {
+        let today = self.packs.today.clone();
         let profile = self.db.profile().map_err(domain_error)?;
         let results = normalize_panel(&self.registry, &self.ranges, &profile, &panel);
-        let out: Vec<serde_json::Value> = results
-            .iter()
-            .map(|r| match r {
-                Ok(res) => serde_json::to_value(res)
-                    .unwrap_or(serde_json::json!({"error": "serialization failed"})),
-                Err(e) => serde_json::json!({"error": e.to_string()}),
-            })
-            .collect();
-        Ok(CallToolResult::success(vec![json_content(
-            serde_json::json!({ "results": out }),
-        )?]))
+        let mut b = self.builder("lab_normalize");
+        b.claim(
+            ClaimKind::Meta,
+            "panel as submitted (dry run, nothing persisted)",
+            serde_json::json!(&panel),
+            vec!["query:lab_normalize".into()],
+        );
+        let mut abstain_all = true;
+        for (input, r) in panel.iter().zip(results.iter()) {
+            b.claim(
+                ClaimKind::Reported,
+                format!("reported {}: {} {:?}", input.analyte, input.value, input.unit),
+                serde_json::to_value(input).unwrap_or(serde_json::Value::Null),
+                vec!["query:lab_normalize".into()],
+            );
+            match r {
+                Ok(res) => {
+                    abstain_all = false;
+                    b.claim(
+                        ClaimKind::Inferred,
+                        format!(
+                            "normalized: {} = {} {}",
+                            res.analyte_id, res.canonical_value, res.canonical_unit.label()
+                        ),
+                        serde_json::to_value(res).unwrap_or(serde_json::Value::Null),
+                        vec![
+                            "query:lab_normalize".into(),
+                            "pack:ranges".into(),
+                            "pack:analytes".into(),
+                        ],
+                    )
+                    .mark_stale_from_value(&today);
+                }
+                Err(e) => {
+                    b.claim(
+                        ClaimKind::Meta,
+                        format!("rejected: {}", input.analyte),
+                        serde_json::json!({ "analyte": input.analyte, "error": e.to_string() }),
+                        vec!["gate:normalize".into()],
+                    );
+                }
+            }
+        }
+        if abstain_all && !panel.is_empty() {
+            b.abstention(
+                "lab_normalize",
+                "every submitted value was rejected by the plausibility/unit gates",
+                vec!["verify analyte names, units, and values".into()],
+            );
+        }
+        self.finish(b)
     }
 
     #[tool(
-        description = "Calculated free testosterone (Vermeulen 1999) from total testosterone, SHBG, and optional albumin (assumed 4.3 g/dL if omitted). All units optional; accepts mass or molar notation."
+        description = "Calculated free testosterone (Vermeulen 1999) from total testosterone, SHBG, and optional albumin (assumed 4.3 g/dL if omitted). All units optional; accepts mass or molar notation. The result is independently recomputed by the verifier before it is returned."
     )]
     fn derived_free_testosterone(
         &self,
         Parameters(input): Parameters<FreeTInput>,
     ) -> Result<CallToolResult, McpError> {
         let derived = free_testosterone_vermeulen(&self.registry, &input).map_err(domain_error)?;
-        let payload = serde_json::to_value(&derived)
-            .map_err(|e| McpError::internal_error(e.to_string(), None))?;
-        Ok(CallToolResult::success(vec![json_content(payload)?]))
+        let mut b = self.builder("derived_free_testosterone");
+        let inputs = inputs_map(&serde_json::json!({
+            "total_testosterone_nmol_l": derived.inputs["total_testosterone_nmol_l"],
+            "shbg_nmol_l": derived.inputs["shbg_nmol_l"],
+            "albumin_g_dl": derived.inputs["albumin_g_dl"],
+        }));
+        b.derived(
+            "calculated free testosterone (Vermeulen 1999)",
+            serde_json::to_value(&derived).unwrap_or(serde_json::Value::Null),
+            vec!["input:derived".into()],
+            "vermeulen1999",
+            inputs,
+        );
+        self.finish(b)
     }
 
     #[tool(
-        description = "HOMA-IR fasting insulin resistance index from fasting glucose and insulin (Matthews 1985). Values above ~2 suggest insulin resistance; interpret alongside functional ranges."
+        description = "HOMA-IR fasting insulin resistance index from fasting glucose and insulin (Matthews 1985). Values above ~2 suggest insulin resistance; interpret alongside functional ranges. The result is independently recomputed by the verifier before it is returned."
     )]
     fn derived_homa_ir(
         &self,
         Parameters(input): Parameters<HomaInput>,
     ) -> Result<CallToolResult, McpError> {
         let derived = homa_ir(&self.registry, &input).map_err(domain_error)?;
-        let payload = serde_json::to_value(&derived)
-            .map_err(|e| McpError::internal_error(e.to_string(), None))?;
-        Ok(CallToolResult::success(vec![json_content(payload)?]))
+        let mut b = self.builder("derived_homa_ir");
+        let inputs = inputs_map(&serde_json::json!({
+            "glucose_mg_dl": derived.inputs["glucose_mg_dl"],
+            "insulin_uu_ml": derived.inputs["insulin_uu_ml"],
+        }));
+        b.derived(
+            "calculated HOMA-IR (Matthews 1985)",
+            serde_json::to_value(&derived).unwrap_or(serde_json::Value::Null),
+            vec!["input:derived".into()],
+            "matthews1985",
+            inputs,
+        );
+        self.finish(b)
     }
 }
 
 impl Asclepius {
+    /// Latest committed value per analyte, keeping the fact id for evidence.
+    fn latest_facts(
+        &self,
+        profile: &asclepius_core::profile::Profile,
+    ) -> Result<Vec<(LatestValue, String)>, McpError> {
+        let facts = self.db.history(None, 1000).map_err(domain_error)?;
+        let mut latest: Vec<(LatestValue, String)> = Vec::new();
+        for fact in &facts {
+            let assessments =
+                self.ranges
+                    .assess(&fact.analyte, profile.sex, profile.age_years, fact.value);
+            match latest.iter_mut().find(|(l, _)| l.analyte == fact.analyte) {
+                Some(slot) => {
+                    slot.0.value = fact.value;
+                    slot.0.assessments = assessments;
+                    slot.1 = fact.id.clone();
+                }
+                None => latest.push((
+                    LatestValue {
+                        analyte: fact.analyte.clone(),
+                        value: fact.value,
+                        assessments,
+                    },
+                    fact.id.clone(),
+                )),
+            }
+        }
+        Ok(latest)
+    }
+
+    fn builder(&self, tool: &str) -> EnvelopeBuilder {
+        let mut b = EnvelopeBuilder::new(tool);
+        b.set_pack_hashes(self.packs.hashes().clone());
+        b
+    }
+
+    /// L3 gate: verify every claim, then serialize. A failing envelope is
+    /// refused — never sent to the client.
+    fn finish(&self, builder: EnvelopeBuilder) -> Result<CallToolResult, McpError> {
+        let tool = builder.tool().to_string();
+        let report = verify_claims(
+            builder.claims(),
+            &tool,
+            Some(&self.db),
+            Some(&self.packs),
+            &self.packs.today,
+        );
+        if report.status != "pass" {
+            self.bridge.post(
+                "verifier_refusal",
+                &format!("{tool}: {}", report.failures.join("; ")),
+            );
+            return Err(McpError::internal_error(
+                format!(
+                    "verifier refused output for {tool}: {}",
+                    report.failures.join("; ")
+                ),
+                None,
+            ));
+        }
+        let envelope: Envelope = builder.finish(NAME, VERSION, report);
+        let payload = serde_json::to_value(&envelope)
+            .map_err(|e| McpError::internal_error(e.to_string(), None))?;
+        Ok(CallToolResult::success(vec![json_content(payload)?]))
+    }
+
     fn pubmed_search_and_cache(
         &self,
         claim: &str,
@@ -801,7 +1664,7 @@ impl ServerHandler for Asclepius {
     fn get_info(&self) -> ServerConfig {
         let mut config = ServerConfig::new(ServerCapabilities::builder().enable_tools().build())
             .with_instructions(
-                "Asclepius, a root-cause holistic physician. Deterministic engine: unit conversion, dual reference ranges (population + functional), derived biomarkers. Every range carries a source and confidence. Prefer natural interventions; always surface red flags. Not a substitute for emergency or in-person care.",
+                "Asclepius, a root-cause holistic physician. Deterministic engine: unit conversion, dual reference ranges (population + functional), derived biomarkers. Every tool response is an assertion envelope: claims carry evidence bindings, pack content hashes, and an independent verifier report — a claim without evidence cannot be emitted. Prefer natural interventions; always surface red flags. Not a substitute for emergency or in-person care.",
             );
         let mut info = Implementation::default();
         info.name = NAME.into();
@@ -816,37 +1679,58 @@ impl ServerHandler for Asclepius {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let root = packs_root();
-    let registry = AnalyteRegistry::load_dir(&root.join("analytes"))?;
-    let ranges = RangeSet::load_dir(&root.join("ranges"), &registry)?;
-    let rules = RuleSet::load_dir(&root.join("rules"), &registry)?;
-    let conditions = ConditionLibrary::load_dir(&root.join("conditions"))?;
-    let interventions = InterventionLibrary::load_dir(&root.join("interventions"))?;
-    let triage = TriageSet::load_dir(&root.join("triage"))?;
+    // L0 load gate: hash, parse, and cross-validate every pack file before
+    // anything else. Invalid files are excluded and reported; the server
+    // starts degraded rather than silently wrong.
+    let index = packs::load_pack_index(&root);
+    for excluded in index.excluded() {
+        eprintln!(
+            "asclepius: pack EXCLUDED by load gate: {} ({})",
+            excluded.rel_path, excluded.reason
+        );
+    }
+    if index.is_empty() {
+        return Err(format!(
+            "no content packs admitted from {} — check the gate output above",
+            root.display()
+        )
+        .into());
+    }
+    let registry = AnalyteRegistry::load_paths(&packs::allowed_files(&root, "analytes", &index))?;
+    let ranges = RangeSet::load_paths(&packs::allowed_files(&root, "ranges", &index), &registry)?;
+    let rules = RuleSet::load_paths(&packs::allowed_files(&root, "rules", &index), &registry)?;
+    let conditions =
+        ConditionLibrary::load_paths(&packs::allowed_files(&root, "conditions", &index))?;
+    let interventions =
+        InterventionLibrary::load_paths(&packs::allowed_files(&root, "interventions", &index))?;
+    let triage = TriageSet::load_paths(&packs::allowed_files(&root, "triage", &index))?;
+    let causal = CausalGraph::load_paths(
+        &packs::allowed_files(&root, "causal", &index),
+        &packs::allowed_files(&root, "treatment-responses", &index),
+    )?;
+    let tests = TestLibrary::load_paths(&packs::allowed_files(&root, "tests", &index))?;
     let pubmed = PubMedClient::from_env();
     let bridge = Bridge::from_env();
     let db_path = data_home().join("asclepius.db");
     let db = Db::open(&db_path)?;
     eprintln!(
-        "asclepius {} serving: {} analytes, {} ranges, {} rules, {} condition cards, {} interventions, {} triage rules from {} | ledger {} | pubmed {} | bridge {}",
+        "asclepius {} serving patient '{}': {} analytes, {} ranges, {} rules, {} condition cards, {} interventions, {} triage rules, {} causal nodes, {} response patterns, {} investigation tests from {} | ledger {} | pubmed {} | bridge {} | packs excluded: {}",
         VERSION,
+        db.patient(),
         registry.all().len(),
         ranges.len(),
         rules.len(),
         conditions.all().len(),
         interventions.all().len(),
         triage.len(),
+        causal.nodes().len(),
+        causal.responses().len(),
+        tests.all().len(),
         root.display(),
         db_path.display(),
-        if pubmed.enabled {
-            "enabled"
-        } else {
-            "disabled"
-        },
-        if bridge.enabled() {
-            "enabled"
-        } else {
-            "disabled"
-        },
+        if pubmed.enabled { "enabled" } else { "disabled" },
+        if bridge.enabled() { "enabled" } else { "disabled" },
+        index.excluded().len(),
     );
     let doctor = Asclepius {
         registry: Arc::new(registry),
@@ -855,9 +1739,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         conditions: Arc::new(conditions),
         interventions: Arc::new(interventions),
         triage: Arc::new(triage),
+        causal: Arc::new(causal),
+        tests: Arc::new(tests),
         pubmed: Arc::new(pubmed),
         bridge: Arc::new(bridge),
         db: Arc::new(db),
+        packs: Arc::new(index),
     };
     let service = doctor
         .serve(stdio())

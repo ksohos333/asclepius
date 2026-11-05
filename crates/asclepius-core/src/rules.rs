@@ -91,9 +91,7 @@ impl RuleSet {
         }
         Ok(Self { rules })
     }
-
     pub fn load_dir(dir: &Path, registry: &AnalyteRegistry) -> Result<Self, AsclepiusError> {
-        let mut rules = Vec::new();
         let mut entries: Vec<_> = std::fs::read_dir(dir)?
             .filter_map(|e| e.ok())
             .map(|e| e.path())
@@ -106,12 +104,28 @@ impl RuleSet {
                 format!("no .toml rule packs found in {}", dir.display()),
             )));
         }
-        for path in entries {
-            let raw = std::fs::read_to_string(&path)?;
-            let parsed: RuleFile = toml::from_str(&raw).map_err(|source| AsclepiusError::Toml {
-                file: path.display().to_string(),
-                source,
-            })?;
+        Self::load_paths(&entries, registry)
+    }
+
+    /// Load from an explicit, gate-admitted list of pack files.
+    pub fn load_paths(
+        paths: &[std::path::PathBuf],
+        registry: &AnalyteRegistry,
+    ) -> Result<Self, AsclepiusError> {
+        if paths.is_empty() {
+            return Err(AsclepiusError::Io(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "no gate-admitted rule packs",
+            )));
+        }
+        let mut rules = Vec::new();
+        for path in paths {
+            let raw = std::fs::read_to_string(path)?;
+            let parsed: RuleFile =
+                toml::from_str(&raw).map_err(|source| AsclepiusError::Toml {
+                    file: path.display().to_string(),
+                    source,
+                })?;
             rules.extend(parsed.rule);
         }
         Self::from_vec(rules, registry)
@@ -215,7 +229,6 @@ struct TriageFile {
 
 impl TriageSet {
     pub fn load_dir(dir: &Path) -> Result<Self, AsclepiusError> {
-        let mut rules = Vec::new();
         let mut entries: Vec<_> = std::fs::read_dir(dir)?
             .filter_map(|e| e.ok())
             .map(|e| e.path())
@@ -228,8 +241,20 @@ impl TriageSet {
                 format!("no .toml triage packs found in {}", dir.display()),
             )));
         }
-        for path in entries {
-            let raw = std::fs::read_to_string(&path)?;
+        Self::load_paths(&entries)
+    }
+
+    /// Load from an explicit, gate-admitted list of pack files.
+    pub fn load_paths(paths: &[std::path::PathBuf]) -> Result<Self, AsclepiusError> {
+        if paths.is_empty() {
+            return Err(AsclepiusError::Io(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "no gate-admitted triage packs",
+            )));
+        }
+        let mut rules = Vec::new();
+        for path in paths {
+            let raw = std::fs::read_to_string(path)?;
             let parsed: TriageFile =
                 toml::from_str(&raw).map_err(|source| AsclepiusError::Toml {
                     file: path.display().to_string(),

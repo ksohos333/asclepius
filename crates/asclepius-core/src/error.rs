@@ -32,6 +32,8 @@ pub enum AsclepiusError {
         file: String,
         source: toml::de::Error,
     },
+    #[error("causal graph integrity error: {0}")]
+    CausalGraph(String),
     #[error("json error: {0}")]
     Json(#[from] serde_json::Error),
 }

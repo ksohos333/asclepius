@@ -5,7 +5,7 @@ use crate::range::{RangeAssessment, RangeSet};
 use crate::units::{Unit, convert};
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Default, Deserialize, schemars::JsonSchema)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize, schemars::JsonSchema)]
 pub struct LabValueInput {
     pub analyte: String,
     pub value: f64,

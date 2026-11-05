@@ -1,0 +1,123 @@
+# Investigation tests: what each one discriminates, at what cost, with what
+# caveats. The workup planner ranks these against live root-cause scores —
+# a test earns its place by resolving uncertainty where the evidence currently
+# points, not by convention.
+# Availability prose is region-independent for now; region-scoped routing
+# (who orders it, how it is covered, where to get it) arrives with the
+# pathways pack.
+
+[[test]]
+id = "sibo_lactulose_breath"
+name = "SIBO breath test (lactulose)"
+kind = "breath"
+summary = "Hydrogen/methane breath series after lactulose substrate: the most direct functional probe of small-intestinal bacterial overgrowth — and the only first-line test for the leading hypothesis when antibiotic response is transient."
+discriminates = [
+    { node = "gut_dysbiosis", resolution = 0.6 },
+]
+specimen = "serial breath samples, 2-3 hours after lactulose substrate, fasting"
+cost_band = "low"
+availability = "functional-medicine labs and some GI clinics; direct-to-consumer kits exist (region routing: pathways pack, Phase 3)"
+caveats = [
+    "rapid intestinal transit can produce false-positive hydrogen rises (substrate reaching the colon early)",
+    "methane-dominant overgrowth can understate on hydrogen-only panels — prefer H2/CH4 dual-gas",
+    "preparation matters: recent antibiotics, PPIs, and laxatives suppress or distort results (washout windows apply)",
+]
+tier = "C"
+sources = ["North American consensus on breath testing (2017)", "SIBO diagnosis reviews"]
+review_by = "2027-06-01"
+
+[[test]]
+id = "comprehensive_stool_panel"
+name = "Comprehensive stool analysis (microbiology + markers)"
+kind = "stool"
+summary = "Culture/molecular microbiome mapping plus inflammation and digestion markers (calprotectin, elastase, zonulin depending on lab). Broader but less specific than breath testing: characterizes the ecology rather than overgrowth location."
+discriminates = [
+    { node = "gut_dysbiosis", resolution = 0.45 },
+    { node = "systemic_inflammation", resolution = 0.15 },
+]
+specimen = "stool collection kit"
+cost_band = "moderate"
+availability = "direct-to-consumer functional labs (region routing: pathways pack, Phase 3)"
+caveats = [
+    "single-sample microbiome snapshots vary day to day; treat taxonomy shifts as directional, not diagnostic",
+    "marker panels differ substantially between labs — compare like with like on retests",
+]
+tier = "C"
+sources = ["gut microbiome sampling variability literature", "stool biomarker reviews"]
+review_by = "2027-06-01"
+
+[[test]]
+id = "serum_igf1"
+name = "Serum IGF-1"
+kind = "blood"
+summary = "Insulin-like growth factor 1: the hormonal relay between growth-hormone signaling (and dietary protein/glycemic load) and sebocyte/keratinocyte proliferation. Closes a named probe gap for the insulin-IGF-1 axis."
+discriminates = [
+    { node = "hyperinsulinemia_igf1", resolution = 0.35 },
+]
+specimen = "serum, single draw"
+cost_band = "low"
+availability = "standard endocrine panels at most labs; needs the igf_1 analyte defined before results can be committed (currently a listed knowledge gap)"
+caveats = [
+    "IGF-1 varies with age and sex; interpret against age-banded reference ranges",
+    "committing results requires adding the igf_1 analyte + ranges to the packs (visible in ping's gap list)"
+]
+tier = "B"
+sources = ["IGF-1 and acne mechanistic literature", "glycemic load RCTs measuring IGF-1"]
+review_by = "2027-06-01"
+
+[[test]]
+id = "serum_dhea_s"
+name = "Serum DHEA-S"
+kind = "blood"
+summary = "The dominant adrenal androgen and a direct sebaceous gland stimulus. Named probe of the androgen axis whose analyte definition is currently a listed gap — closing it makes the androgen node's probes fully committable."
+discriminates = [
+    { node = "androgen_drive", resolution = 0.3 },
+]
+specimen = "serum, single draw"
+cost_band = "low"
+availability = "standard endocrine panels at most labs; needs the dhea_s analyte defined before results can be committed (currently a listed knowledge gap)"
+caveats = [
+    "levels decline with age; interpret against age-banded ranges",
+    "adrenal androgen excess points upstream (ACTH/stress axis) rather than gonadal — different follow-up"
+]
+tier = "B"
+sources = ["DHEA-S and sebum production literature"]
+review_by = "2027-06-01"
+
+[[test]]
+id = "fasting_insulin_glucose_recheck"
+name = "Fasting insulin + glucose recheck (HOMA-IR recompute)"
+kind = "blood"
+summary = "Repeat fasting pair to refresh HOMA-IR and catch drift in insulin signaling — cheap, comparable over time, and the engine recomputes the derived marker on commit."
+discriminates = [
+    { node = "hyperinsulinemia_igf1", resolution = 0.4 },
+]
+specimen = "serum, fasting (10-12h) morning draw"
+cost_band = "low"
+availability = "any standard lab; fasting protocol matters more than the panel"
+caveats = [
+    "insulin is pulsatile and stress-sensitive: one marginal value deserves a confirmatory repeat before it moves a hypothesis",
+    "ensure genuine fasting state — morning coffee with sugar or a late meal flattens the signal"
+]
+tier = "B"
+sources = ["Matthews 1985 HOMA-IR derivation and usage guidance"]
+review_by = "2027-06-01"
+
+[[test]]
+id = "dried_urine_hormone_panel"
+name = "Dried urine hormone panel (DUTCH-type)"
+kind = "urine"
+summary = "Comprehensive sex-hormone and cortisol-metabolite mapping over a day. High information density but high cost — earns its place only when cheaper probes leave the androgen picture ambiguous."
+discriminates = [
+    { node = "androgen_drive", resolution = 0.25 },
+]
+specimen = "dried urine strips, 4 timepoints across one day"
+cost_band = "high"
+availability = "direct-to-consumer functional labs (region routing: pathways pack, Phase 3)"
+caveats = [
+    "metabolite-level readings are not directly comparable to serum values; establish a baseline before treating deltas as change",
+    "not the first move: serum total/free T + SHBG + DHEA-S answer most androgen questions for less"
+]
+tier = "C"
+sources = ["urinary steroid metabolomics literature"]
+review_by = "2027-06-01"

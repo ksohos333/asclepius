@@ -1,0 +1,39 @@
+# Treatment-response patterns: the patient's own history as diagnostic
+# evidence. Registering a pattern (treatment_response_register) commits it to
+# the ledger and shifts the causal nodes its effects name.
+# Tier honesty: these shifts are curated priors, not measurements.
+
+[[response]]
+id = "antibiotic_transient_clearance"
+name = "Antibiotic transient clearance"
+pattern = "Oral or topical antibiotics cleared or markedly improved lesions; acne recurred within weeks to months of stopping. Antibiotics delivered or disrupted a microbial ecology — recurrence after withdrawal points at a standing ecological driver rather than a one-time infection."
+effects = [
+    { node = "gut_dysbiosis", weight = 0.5 },
+    { node = "androgen_drive", weight = -0.05 },
+]
+tier = "C"
+sources = ["gut-skin axis reviews; recurrent acne post-antibiotic course descriptions"]
+review_by = "2027-06-01"
+
+[[response]]
+id = "isotretinoin_transient_recur"
+name = "Isotretinoin response with recurrence"
+pattern = "Isotretinoin cleared the skin (sebum suppression works regardless of upstream cause); lesions returned after discontinuation. Demonstrates sebum-dependence of the acne, and that the upstream driver survived the course. Modest positive on sebum-feeding axes."
+effects = [
+    { node = "androgen_drive", weight = 0.15 },
+    { node = "hyperinsulinemia_igf1", weight = 0.10 },
+]
+tier = "D"
+sources = ["isotretinoin relapse literature; mechanistic inference"]
+review_by = "2027-06-01"
+
+[[response]]
+id = "topical_failure_bpo"
+name = "Topical failure (benzoyl peroxide / topicals)"
+pattern = "Topical agents (e.g. benzoyl peroxide) produced stinging or no lasting benefit: surface-level intervention did not move the phenotype. Weakly raises systemic-cause plausibility."
+effects = [
+    { node = "systemic_inflammation", weight = 0.10 },
+]
+tier = "D"
+sources = ["mechanistic inference from topical vs systemic action"]
+review_by = "2027-06-01"

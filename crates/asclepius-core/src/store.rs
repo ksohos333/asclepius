@@ -7,8 +7,11 @@ use std::path::Path;
 use std::sync::Mutex;
 use uuid::Uuid;
 
-pub const SCHEMA_VERSION: i64 = 4;
+pub const SCHEMA_VERSION: i64 = 6;
 
+/// Current schema (v5). `patient_id` scopes every ledger row to one patient
+/// (single-patient today, multi-patient-ready); `origin` on hypotheses
+/// records who authored the hypothesis ('user' | 'engine' | 'agent').
 const SCHEMA: &str = r#"
 CREATE TABLE IF NOT EXISTS meta (
     key TEXT PRIMARY KEY,
@@ -20,12 +23,14 @@ CREATE TABLE IF NOT EXISTS profile (
 );
 CREATE TABLE IF NOT EXISTS panels (
     id TEXT PRIMARY KEY,
+    patient_id TEXT NOT NULL DEFAULT 'user',
     collected_at TEXT,
     recorded_at INTEGER NOT NULL,
     note TEXT
 );
 CREATE TABLE IF NOT EXISTS facts (
     id TEXT PRIMARY KEY,
+    patient_id TEXT NOT NULL DEFAULT 'user',
     kind TEXT NOT NULL CHECK (kind IN ('lab', 'derived')),
     analyte TEXT NOT NULL,
     value REAL NOT NULL,
@@ -43,15 +48,18 @@ CREATE INDEX IF NOT EXISTS idx_facts_analyte ON facts(analyte);
 CREATE INDEX IF NOT EXISTS idx_facts_panel ON facts(panel_id);
 CREATE TABLE IF NOT EXISTS hypotheses (
     id TEXT PRIMARY KEY,
+    patient_id TEXT NOT NULL DEFAULT 'user',
     statement TEXT NOT NULL,
     status TEXT NOT NULL CHECK (status IN ('open', 'supported', 'refuted', 'superseded')),
     basis TEXT,
+    origin TEXT NOT NULL DEFAULT 'user' CHECK (origin IN ('user', 'engine', 'agent')),
     created_at INTEGER NOT NULL,
     review_by TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_hypotheses_status ON hypotheses(status);
 CREATE TABLE IF NOT EXISTS trials (
     id TEXT PRIMARY KEY,
+    patient_id TEXT NOT NULL DEFAULT 'user',
     intervention_id TEXT NOT NULL,
     intervention_name TEXT NOT NULL,
     purpose TEXT NOT NULL,
@@ -67,6 +75,7 @@ CREATE INDEX IF NOT EXISTS idx_trials_status ON trials(status);
 CREATE TABLE IF NOT EXISTS trial_log (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     trial_id TEXT NOT NULL REFERENCES trials(id),
+    patient_id TEXT NOT NULL DEFAULT 'user',
     ts INTEGER NOT NULL,
     kind TEXT NOT NULL,
     text TEXT NOT NULL
@@ -77,11 +86,30 @@ CREATE TABLE IF NOT EXISTS pubmed_cache (
     abstract TEXT NOT NULL,
     fetched_at INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS treatment_responses (
+    id TEXT PRIMARY KEY,
+    patient_id TEXT NOT NULL DEFAULT 'user',
+    response_id TEXT NOT NULL,
+    note TEXT,
+    created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_treatment_responses_patient ON treatment_responses(patient_id);
+"#;
+
+/// v4 -> v5: patient scoping on every table + hypothesis origin column.
+const MIGRATE_V4_TO_V5: &str = r#"
+ALTER TABLE panels ADD COLUMN patient_id TEXT NOT NULL DEFAULT 'user';
+ALTER TABLE facts ADD COLUMN patient_id TEXT NOT NULL DEFAULT 'user';
+ALTER TABLE hypotheses ADD COLUMN patient_id TEXT NOT NULL DEFAULT 'user';
+ALTER TABLE trials ADD COLUMN patient_id TEXT NOT NULL DEFAULT 'user';
+ALTER TABLE trial_log ADD COLUMN patient_id TEXT NOT NULL DEFAULT 'user';
+ALTER TABLE hypotheses ADD COLUMN origin TEXT NOT NULL DEFAULT 'user';
 "#;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct FactRow {
     pub id: String,
+    pub patient_id: String,
     pub kind: String,
     pub analyte: String,
     pub value: f64,
@@ -146,9 +174,11 @@ impl HypothesisStatus {
 #[derive(Debug, Clone, Serialize)]
 pub struct HypothesisRow {
     pub id: String,
+    pub patient_id: String,
     pub statement: String,
     pub status: HypothesisStatus,
     pub basis: Option<serde_json::Value>,
+    pub origin: String,
     pub created_at: i64,
     pub review_by: Option<String>,
 }
@@ -166,6 +196,19 @@ pub struct HypothesisRegisterInput {
     pub note: Option<String>,
     #[serde(default)]
     pub review_by: Option<String>,
+    /// Who authored this hypothesis: 'user' (default), 'engine', or 'agent'.
+    #[serde(default)]
+    pub origin: Option<String>,
+}
+
+impl HypothesisRegisterInput {
+    pub fn origin_value(&self) -> &str {
+        match self.origin.as_deref() {
+            Some("engine") => "engine",
+            Some("agent") => "agent",
+            _ => "user",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Default, Deserialize, schemars::JsonSchema)]
@@ -224,6 +267,7 @@ impl TrialStatus {
 #[derive(Debug, Clone, Serialize)]
 pub struct TrialRow {
     pub id: String,
+    pub patient_id: String,
     pub intervention_id: String,
     pub intervention_name: String,
     pub purpose: String,
@@ -280,9 +324,27 @@ pub struct TrialReportInput {
     pub trial_id: String,
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct TreatmentResponseRow {
+    pub id: String,
+    pub patient_id: String,
+    pub response_id: String,
+    pub note: Option<String>,
+    pub created_at: i64,
+}
+
+#[derive(Debug, Clone, Default, Deserialize, schemars::JsonSchema)]
+pub struct TreatmentResponseRegisterInput {
+    /// A response pattern id from the treatment-responses pack (validated).
+    pub response_id: String,
+    #[serde(default)]
+    pub note: Option<String>,
+}
+
 #[derive(Debug)]
 pub struct Db {
     conn: Mutex<Connection>,
+    patient_id: String,
 }
 
 fn db_err(e: rusqlite::Error) -> AsclepiusError {
@@ -302,8 +364,10 @@ impl Db {
         conn.busy_timeout(std::time::Duration::from_secs(5))
             .map_err(db_err)?;
         Self::migrate(&conn)?;
+        let patient_id = std::env::var("ASCLEPIUS_PATIENT").unwrap_or_else(|_| "user".into());
         Ok(Self {
             conn: Mutex::new(conn),
+            patient_id,
         })
     }
 
@@ -314,7 +378,94 @@ impl Db {
         Self::migrate(&conn)?;
         Ok(Self {
             conn: Mutex::new(conn),
+            patient_id: "user".into(),
         })
+    }
+
+    /// The patient this Db instance reads and writes for.
+    pub fn patient(&self) -> &str {
+        &self.patient_id
+    }
+
+    pub fn panel_exists(&self, id: &str) -> bool {
+        let conn = self.conn.lock().expect("db mutex poisoned");
+        conn.query_row(
+            "SELECT 1 FROM panels WHERE id = ?1 AND patient_id = ?2",
+            params![id, self.patient_id],
+            |_| Ok(()),
+        )
+        .is_ok()
+    }
+
+    pub fn hypothesis_exists(&self, id: &str) -> bool {
+        let conn = self.conn.lock().expect("db mutex poisoned");
+        conn.query_row(
+            "SELECT 1 FROM hypotheses WHERE id = ?1 AND patient_id = ?2",
+            params![id, self.patient_id],
+            |_| Ok(()),
+        )
+        .is_ok()
+    }
+
+    pub fn trial_exists(&self, id: &str) -> bool {
+        let conn = self.conn.lock().expect("db mutex poisoned");
+        conn.query_row(
+            "SELECT 1 FROM trials WHERE id = ?1 AND patient_id = ?2",
+            params![id, self.patient_id],
+            |_| Ok(()),
+        )
+        .is_ok()
+    }
+
+    pub fn treatment_response_exists(&self, id: &str) -> bool {
+        let conn = self.conn.lock().expect("db mutex poisoned");
+        conn.query_row(
+            "SELECT 1 FROM treatment_responses WHERE id = ?1 AND patient_id = ?2",
+            params![id, self.patient_id],
+            |_| Ok(()),
+        )
+        .is_ok()
+    }
+
+    pub fn add_treatment_response(
+        &self,
+        input: &TreatmentResponseRegisterInput,
+    ) -> Result<String, AsclepiusError> {
+        let conn = self.conn.lock().expect("db mutex poisoned");
+        let id = format!("tres_{}", Uuid::new_v4());
+        conn.execute(
+            "INSERT INTO treatment_responses (id, patient_id, response_id, note, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![id, self.patient_id, input.response_id, input.note, now_secs()],
+        )
+        .map_err(db_err)?;
+        Ok(id)
+    }
+
+    /// Registered treatment responses for this patient, oldest first.
+    pub fn treatment_responses(&self, limit: usize) -> Result<Vec<TreatmentResponseRow>, AsclepiusError> {
+        let conn = self.conn.lock().expect("db mutex poisoned");
+        let mut stmt = conn
+            .prepare(
+                "SELECT id, patient_id, response_id, note, created_at
+                 FROM treatment_responses WHERE patient_id = ?1
+                 ORDER BY created_at ASC, rowid ASC LIMIT ?2",
+            )
+            .map_err(db_err)?;
+        let rows = stmt
+            .query_map(params![self.patient_id, limit as i64], |row| {
+                Ok(TreatmentResponseRow {
+                    id: row.get(0)?,
+                    patient_id: row.get(1)?,
+                    response_id: row.get(2)?,
+                    note: row.get(3)?,
+                    created_at: row.get(4)?,
+                })
+            })
+            .map_err(db_err)?
+            .filter_map(|r| r.ok())
+            .collect();
+        Ok(rows)
     }
 
     fn migrate(conn: &Connection) -> Result<(), AsclepiusError> {
@@ -322,7 +473,12 @@ impl Db {
             .query_row("PRAGMA user_version", [], |row| row.get(0))
             .map_err(db_err)?;
         if version < SCHEMA_VERSION {
+            // Idempotent base schema (fresh installs get v5 columns inline).
             conn.execute_batch(SCHEMA).map_err(db_err)?;
+            if version >= 1 && version < 5 {
+                // Existing pre-v5 ledger: add the columns it is missing.
+                conn.execute_batch(MIGRATE_V4_TO_V5).map_err(db_err)?;
+            }
             conn.pragma_update(None, "user_version", SCHEMA_VERSION)
                 .map_err(db_err)?;
         }
@@ -374,18 +530,19 @@ impl Db {
             .unwrap_or(0);
         let tx = conn.transaction().map_err(db_err)?;
         tx.execute(
-            "INSERT INTO panels (id, collected_at, recorded_at, note) VALUES (?1, ?2, ?3, ?4)",
-            params![panel_id, collected_at, now, note],
+            "INSERT INTO panels (id, patient_id, collected_at, recorded_at, note) VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![panel_id, self.patient_id, collected_at, now, note],
         )
         .map_err(db_err)?;
         let mut ids = Vec::with_capacity(results.len());
         for result in results {
             let id = format!("lab_{}", Uuid::new_v4());
             tx.execute(
-                "INSERT INTO facts (id, kind, analyte, value, unit, input_ids, formula_version, source, panel_id, collected_at, recorded_at, superseded_by, note)
-                 VALUES (?1, 'lab', ?2, ?3, ?4, NULL, NULL, ?5, ?6, ?7, ?8, NULL, ?9)",
+                "INSERT INTO facts (id, patient_id, kind, analyte, value, unit, input_ids, formula_version, source, panel_id, collected_at, recorded_at, superseded_by, note)
+                 VALUES (?1, ?2, 'lab', ?3, ?4, ?5, NULL, NULL, ?6, ?7, ?8, ?9, NULL, ?10)",
                 params![
                     id,
+                    self.patient_id,
                     result.analyte_id,
                     result.canonical_value,
                     result.canonical_unit.label(),
@@ -411,15 +568,15 @@ impl Db {
         let conn = self.conn.lock().expect("db mutex poisoned");
         let mut stmt = conn
             .prepare(
-                "SELECT id, kind, analyte, value, unit, input_ids, formula_version, source, panel_id, collected_at, recorded_at, superseded_by, note
+                "SELECT id, patient_id, kind, analyte, value, unit, input_ids, formula_version, source, panel_id, collected_at, recorded_at, superseded_by, note
                  FROM facts
-                 WHERE superseded_by IS NULL AND (?1 IS NULL OR analyte = ?1)
+                 WHERE superseded_by IS NULL AND patient_id = ?1 AND (?2 IS NULL OR analyte = ?2)
                  ORDER BY recorded_at ASC, rowid ASC
-                 LIMIT ?2",
+                 LIMIT ?3",
             )
             .map_err(db_err)?;
         let rows = stmt
-            .query_map(params![analyte, limit as i64], map_fact_row)
+            .query_map(params![self.patient_id, analyte, limit as i64], map_fact_row)
             .map_err(db_err)?
             .filter_map(|r| r.ok())
             .collect();
@@ -430,11 +587,13 @@ impl Db {
         let conn = self.conn.lock().expect("db mutex poisoned");
         let mut stmt = conn
             .prepare(
-                "SELECT id, kind, analyte, value, unit, input_ids, formula_version, source, panel_id, collected_at, recorded_at, superseded_by, note
-                 FROM facts WHERE id = ?1",
+                "SELECT id, patient_id, kind, analyte, value, unit, input_ids, formula_version, source, panel_id, collected_at, recorded_at, superseded_by, note
+                 FROM facts WHERE id = ?1 AND patient_id = ?2",
             )
             .map_err(db_err)?;
-        let mut rows = stmt.query_map(params![id], map_fact_row).map_err(db_err)?;
+        let mut rows = stmt
+            .query_map(params![id, self.patient_id], map_fact_row)
+            .map_err(db_err)?;
         match rows.next() {
             Some(row) => Ok(Some(row.map_err(db_err)?)),
             None => Ok(None),
@@ -471,9 +630,17 @@ impl Db {
             .unwrap_or(0);
         let basis = serde_json::to_value(input).ok().map(|v| v.to_string());
         conn.execute(
-            "INSERT INTO hypotheses (id, statement, status, basis, created_at, review_by)
-             VALUES (?1, ?2, 'open', ?3, ?4, ?5)",
-            params![id, input.statement, basis, now, input.review_by],
+            "INSERT INTO hypotheses (id, patient_id, statement, status, basis, origin, created_at, review_by)
+             VALUES (?1, ?2, ?3, 'open', ?4, ?5, ?6, ?7)",
+            params![
+                id,
+                self.patient_id,
+                input.statement,
+                basis,
+                input.origin_value(),
+                now,
+                input.review_by
+            ],
         )
         .map_err(db_err)?;
         Ok(id)
@@ -488,20 +655,21 @@ impl Db {
         let status_filter = status.map(|s| s.as_str());
         let mut stmt = conn
             .prepare(
-                "SELECT id, statement, status, basis, created_at, review_by
+                "SELECT id, patient_id, statement, status, basis, origin, created_at, review_by
                  FROM hypotheses
-                 WHERE (?1 IS NULL OR status = ?1)
+                 WHERE patient_id = ?1 AND (?2 IS NULL OR status = ?2)
                  ORDER BY created_at DESC
-                 LIMIT ?2",
+                 LIMIT ?3",
             )
             .map_err(db_err)?;
         let rows = stmt
-            .query_map(params![status_filter, limit as i64], |row| {
-                let status_str: String = row.get(2)?;
-                let basis: Option<String> = row.get(3)?;
+            .query_map(params![self.patient_id, status_filter, limit as i64], |row| {
+                let status_str: String = row.get(3)?;
+                let basis: Option<String> = row.get(4)?;
                 Ok(HypothesisRow {
                     id: row.get(0)?,
-                    statement: row.get(1)?,
+                    patient_id: row.get(1)?,
+                    statement: row.get(2)?,
                     status: match status_str.as_str() {
                         "supported" => HypothesisStatus::Supported,
                         "refuted" => HypothesisStatus::Refuted,
@@ -509,8 +677,9 @@ impl Db {
                         _ => HypothesisStatus::Open,
                     },
                     basis: basis.and_then(|b| serde_json::from_str(&b).ok()),
-                    created_at: row.get(4)?,
-                    review_by: row.get(5)?,
+                    origin: row.get(5)?,
+                    created_at: row.get(6)?,
+                    review_by: row.get(7)?,
                 })
             })
             .map_err(db_err)?
@@ -527,8 +696,8 @@ impl Db {
         let conn = self.conn.lock().expect("db mutex poisoned");
         let changed = conn
             .execute(
-                "UPDATE hypotheses SET status = ?2 WHERE id = ?1",
-                params![id, status.as_str()],
+                "UPDATE hypotheses SET status = ?3 WHERE id = ?1 AND patient_id = ?2",
+                params![id, self.patient_id, status.as_str()],
             )
             .map_err(db_err)?;
         Ok(changed > 0)
@@ -545,10 +714,11 @@ impl Db {
         let now = now_secs();
         let tx = conn.transaction().map_err(db_err)?;
         tx.execute(
-            "INSERT INTO trials (id, intervention_id, intervention_name, purpose, status, started_at, ended_at, baseline_fact_ids, outcome_analytes, dose, notes)
-             VALUES (?1, ?2, ?3, ?4, 'planned', NULL, NULL, ?5, ?6, ?7, ?8)",
+            "INSERT INTO trials (id, patient_id, intervention_id, intervention_name, purpose, status, started_at, ended_at, baseline_fact_ids, outcome_analytes, dose, notes)
+             VALUES (?1, ?2, ?3, ?4, ?5, 'planned', NULL, NULL, ?6, ?7, ?8, ?9)",
             params![
                 id,
+                self.patient_id,
                 input.intervention_id,
                 intervention_name,
                 input.purpose,
@@ -560,8 +730,8 @@ impl Db {
         )
         .map_err(db_err)?;
         tx.execute(
-            "INSERT INTO trial_log (trial_id, ts, kind, text) VALUES (?1, ?2, 'note', ?3)",
-            params![id, now, "trial created"],
+            "INSERT INTO trial_log (trial_id, patient_id, ts, kind, text) VALUES (?1, ?2, ?3, 'note', ?4)",
+            params![id, self.patient_id, now, "trial created"],
         )
         .map_err(db_err)?;
         tx.commit().map_err(db_err)?;
@@ -572,8 +742,10 @@ impl Db {
         let conn = self.conn.lock().expect("db mutex poisoned");
         let changed = conn
             .execute(
-                "INSERT INTO trial_log (trial_id, ts, kind, text) VALUES (?1, ?2, ?3, ?4)",
-                params![input.trial_id, now_secs(), input.kind, input.text],
+                "INSERT INTO trial_log (trial_id, patient_id, ts, kind, text)
+                 SELECT ?1, ?2, ?3, ?4, ?5 WHERE EXISTS
+                   (SELECT 1 FROM trials WHERE id = ?1 AND patient_id = ?2)",
+                params![input.trial_id, self.patient_id, now_secs(), input.kind, input.text],
             )
             .map_err(db_err)?;
         Ok(changed > 0)
@@ -582,23 +754,28 @@ impl Db {
     pub fn set_trial_status(&self, input: &TrialStatusInput) -> Result<bool, AsclepiusError> {
         let conn = self.conn.lock().expect("db mutex poisoned");
         let now = now_secs();
+        let scope = " AND patient_id = ?2";
         let changed = match input.status {
             TrialStatus::Active => conn
                 .execute(
-                    "UPDATE trials SET status = 'active', started_at = COALESCE(started_at, ?2) WHERE id = ?1",
-                    params![input.trial_id, now],
+                    &format!(
+                        "UPDATE trials SET status = 'active', started_at = COALESCE(started_at, ?3) WHERE id = ?1{scope}"
+                    ),
+                    params![input.trial_id, self.patient_id, now],
                 )
                 .map_err(db_err)?,
             TrialStatus::Completed | TrialStatus::Aborted => conn
                 .execute(
-                    "UPDATE trials SET status = ?2, ended_at = ?3, started_at = COALESCE(started_at, ?3) WHERE id = ?1",
-                    params![input.trial_id, input.status.as_str(), now],
+                    &format!(
+                        "UPDATE trials SET status = ?3, ended_at = ?4, started_at = COALESCE(started_at, ?4) WHERE id = ?1{scope}"
+                    ),
+                    params![input.trial_id, self.patient_id, input.status.as_str(), now],
                 )
                 .map_err(db_err)?,
             _ => conn
                 .execute(
-                    "UPDATE trials SET status = ?2 WHERE id = ?1",
-                    params![input.trial_id, input.status.as_str()],
+                    &format!("UPDATE trials SET status = ?3 WHERE id = ?1{scope}"),
+                    params![input.trial_id, self.patient_id, input.status.as_str()],
                 )
                 .map_err(db_err)?,
         };
@@ -614,15 +791,15 @@ impl Db {
         let status_filter = status.map(|s| s.as_str());
         let mut stmt = conn
             .prepare(
-                "SELECT id, intervention_id, intervention_name, purpose, status, started_at, ended_at, baseline_fact_ids, outcome_analytes, dose, notes
+                "SELECT id, patient_id, intervention_id, intervention_name, purpose, status, started_at, ended_at, baseline_fact_ids, outcome_analytes, dose, notes
                  FROM trials
-                 WHERE (?1 IS NULL OR status = ?1)
+                 WHERE patient_id = ?1 AND (?2 IS NULL OR status = ?2)
                  ORDER BY rowid DESC
-                 LIMIT ?2",
+                 LIMIT ?3",
             )
             .map_err(db_err)?;
         let rows = stmt
-            .query_map(params![status_filter, limit as i64], map_trial_row)
+            .query_map(params![self.patient_id, status_filter, limit as i64], map_trial_row)
             .map_err(db_err)?
             .filter_map(|r| r.ok())
             .collect();
@@ -633,11 +810,13 @@ impl Db {
         let conn = self.conn.lock().expect("db mutex poisoned");
         let mut stmt = conn
             .prepare(
-                "SELECT id, intervention_id, intervention_name, purpose, status, started_at, ended_at, baseline_fact_ids, outcome_analytes, dose, notes
-                 FROM trials WHERE id = ?1",
+                "SELECT id, patient_id, intervention_id, intervention_name, purpose, status, started_at, ended_at, baseline_fact_ids, outcome_analytes, dose, notes
+                 FROM trials WHERE id = ?1 AND patient_id = ?2",
             )
             .map_err(db_err)?;
-        let mut rows = stmt.query_map(params![id], map_trial_row).map_err(db_err)?;
+        let mut rows = stmt
+            .query_map(params![id, self.patient_id], map_trial_row)
+            .map_err(db_err)?;
         match rows.next() {
             Some(row) => Ok(Some(row.map_err(db_err)?)),
             None => Ok(None),
@@ -649,11 +828,11 @@ impl Db {
         let mut stmt = conn
             .prepare(
                 "SELECT id, trial_id, ts, kind, text FROM trial_log
-                 WHERE trial_id = ?1 ORDER BY id ASC",
+                 WHERE trial_id = ?1 AND patient_id = ?2 ORDER BY id ASC",
             )
             .map_err(db_err)?;
         let rows = stmt
-            .query_map(params![trial_id], |row| {
+            .query_map(params![trial_id, self.patient_id], |row| {
                 Ok(TrialLogRow {
                     id: row.get(0)?,
                     trial_id: row.get(1)?,
@@ -715,15 +894,15 @@ impl Db {
         let conn = self.conn.lock().expect("db mutex poisoned");
         let mut stmt = conn
             .prepare(
-                "SELECT id, kind, analyte, value, unit, input_ids, formula_version, source, panel_id, collected_at, recorded_at, superseded_by, note
+                "SELECT id, patient_id, kind, analyte, value, unit, input_ids, formula_version, source, panel_id, collected_at, recorded_at, superseded_by, note
                  FROM facts
-                 WHERE superseded_by IS NULL AND analyte = ?1
+                 WHERE superseded_by IS NULL AND patient_id = ?1 AND analyte = ?2
                  ORDER BY recorded_at DESC, rowid DESC
                  LIMIT 1",
             )
             .map_err(db_err)?;
         let mut rows = stmt
-            .query_map(params![analyte], map_fact_row)
+            .query_map(params![self.patient_id, analyte], map_fact_row)
             .map_err(db_err)?;
         match rows.next() {
             Some(row) => Ok(Some(row.map_err(db_err)?)),
@@ -750,42 +929,44 @@ fn now_secs() -> i64 {
 }
 
 fn map_trial_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<TrialRow> {
-    let status_str: String = row.get(4)?;
-    let baseline: Option<String> = row.get(7)?;
-    let outcomes: Option<String> = row.get(8)?;
+    let status_str: String = row.get(5)?;
+    let baseline: Option<String> = row.get(8)?;
+    let outcomes: Option<String> = row.get(9)?;
     Ok(TrialRow {
         id: row.get(0)?,
-        intervention_id: row.get(1)?,
-        intervention_name: row.get(2)?,
-        purpose: row.get(3)?,
+        patient_id: row.get(1)?,
+        intervention_id: row.get(2)?,
+        intervention_name: row.get(3)?,
+        purpose: row.get(4)?,
         status: TrialStatus::parse(&status_str).unwrap_or(TrialStatus::Planned),
-        started_at: row.get(5)?,
-        ended_at: row.get(6)?,
+        started_at: row.get(6)?,
+        ended_at: row.get(7)?,
         baseline_fact_ids: baseline.and_then(|b| serde_json::from_str(&b).ok()),
         outcome_analytes: outcomes
             .and_then(|o| serde_json::from_str(&o).ok())
             .unwrap_or_default(),
-        dose: row.get(9)?,
-        notes: row.get(10)?,
+        dose: row.get(10)?,
+        notes: row.get(11)?,
     })
 }
 
 fn map_fact_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<FactRow> {
-    let input_ids: Option<String> = row.get(5)?;
+    let input_ids: Option<String> = row.get(6)?;
     Ok(FactRow {
         id: row.get(0)?,
-        kind: row.get(1)?,
-        analyte: row.get(2)?,
-        value: row.get(3)?,
-        unit: row.get(4)?,
+        patient_id: row.get(1)?,
+        kind: row.get(2)?,
+        analyte: row.get(3)?,
+        value: row.get(4)?,
+        unit: row.get(5)?,
         input_ids: input_ids.and_then(|s| serde_json::from_str(&s).ok()),
-        formula_version: row.get(6)?,
-        source: row.get(7)?,
-        panel_id: row.get(8)?,
-        collected_at: row.get(9)?,
-        recorded_at: row.get(10)?,
-        superseded_by: row.get(11)?,
-        note: row.get(12)?,
+        formula_version: row.get(7)?,
+        source: row.get(8)?,
+        panel_id: row.get(9)?,
+        collected_at: row.get(10)?,
+        recorded_at: row.get(11)?,
+        superseded_by: row.get(12)?,
+        note: row.get(13)?,
     })
 }
 
@@ -883,6 +1064,7 @@ mod tests {
             pmids: vec![],
             note: Some("check again after thyroid optimization".into()),
             review_by: Some("2027-01-01".into()),
+            origin: None,
         };
         let id = db.add_hypothesis(&input).unwrap();
         assert!(id.starts_with("hyp_"));
@@ -943,8 +1125,10 @@ mod tests {
             .begin_trial(&input, "Zinc (picolinate)", vec!["lab_abc".into()])
             .unwrap();
         assert!(id.starts_with("tri_"));
+        assert!(db.trial_exists(&id));
         let rows = db.trials(None, 10).unwrap();
         assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].patient_id, "user");
         assert_eq!(rows[0].status, TrialStatus::Planned);
         assert_eq!(
             rows[0].baseline_fact_ids.clone().unwrap(),
@@ -985,5 +1169,122 @@ mod tests {
             })
             .unwrap()
         );
+    }
+
+    /// The v4 schema exactly as v0.1 shipped it (no patient_id, no origin).
+    const V4_SCHEMA: &str = r#"
+        CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+        CREATE TABLE IF NOT EXISTS profile (id INTEGER PRIMARY KEY CHECK (id = 1), data TEXT NOT NULL);
+        CREATE TABLE IF NOT EXISTS panels (id TEXT PRIMARY KEY, collected_at TEXT, recorded_at INTEGER NOT NULL, note TEXT);
+        CREATE TABLE IF NOT EXISTS facts (
+            id TEXT PRIMARY KEY, kind TEXT NOT NULL CHECK (kind IN ('lab','derived')),
+            analyte TEXT NOT NULL, value REAL NOT NULL, unit TEXT NOT NULL,
+            input_ids TEXT, formula_version TEXT, source TEXT NOT NULL,
+            panel_id TEXT REFERENCES panels(id), collected_at TEXT,
+            recorded_at INTEGER NOT NULL, superseded_by TEXT REFERENCES facts(id), note TEXT
+        );
+        CREATE TABLE IF NOT EXISTS hypotheses (
+            id TEXT PRIMARY KEY, statement TEXT NOT NULL,
+            status TEXT NOT NULL CHECK (status IN ('open','supported','refuted','superseded')),
+            basis TEXT, created_at INTEGER NOT NULL, review_by TEXT
+        );
+        CREATE TABLE IF NOT EXISTS trials (
+            id TEXT PRIMARY KEY, intervention_id TEXT NOT NULL, intervention_name TEXT NOT NULL,
+            purpose TEXT NOT NULL, status TEXT NOT NULL CHECK (status IN ('planned','active','completed','paused','aborted')),
+            started_at INTEGER, ended_at INTEGER, baseline_fact_ids TEXT,
+            outcome_analytes TEXT NOT NULL, dose TEXT, notes TEXT
+        );
+        CREATE TABLE IF NOT EXISTS trial_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, trial_id TEXT NOT NULL REFERENCES trials(id),
+            ts INTEGER NOT NULL, kind TEXT NOT NULL, text TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS pubmed_cache (pmid TEXT PRIMARY KEY, title TEXT NOT NULL, abstract TEXT NOT NULL, fetched_at INTEGER NOT NULL);
+    "#;
+
+    #[test]
+    fn v4_ledger_migrates_with_data_preserved() {
+        let path = std::env::temp_dir().join("asclepius-migration-v4-test.db");
+        let _ = std::fs::remove_file(&path);
+        {
+            let conn = Connection::open(&path).unwrap();
+            conn.execute_batch(V4_SCHEMA).unwrap();
+            conn.execute(
+                "INSERT INTO panels (id, collected_at, recorded_at) VALUES ('pan_old', '2026-10-01', 1000)",
+                [],
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO facts (id, kind, analyte, value, unit, source, panel_id, recorded_at)
+                 VALUES ('lab_old', 'lab', 'tsh', 2.0, 'mIU/L', 'lab_report', 'pan_old', 1000)",
+                [],
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO hypotheses (id, statement, status, created_at)
+                 VALUES ('hyp_old', 'gut dysbiosis drives acne', 'open', 1000)",
+                [],
+            )
+            .unwrap();
+            conn.pragma_update(None, "user_version", 4).unwrap();
+        }
+        // Reopen through the new code: migration v4 -> v5 runs.
+        let db = Db::open(&path).unwrap();
+        let fact = db.get_fact("lab_old").unwrap().expect("fact survived migration");
+        assert_eq!(fact.analyte, "tsh");
+        assert_eq!(fact.value, 2.0);
+        assert_eq!(fact.patient_id, "user");
+        let hyp = db.hypotheses(None, 10).unwrap();
+        assert_eq!(hyp.len(), 1);
+        assert_eq!(hyp[0].id, "hyp_old");
+        assert_eq!(hyp[0].origin, "user", "pre-v5 hypotheses default to user origin");
+        assert_eq!(hyp[0].patient_id, "user");
+        assert!(db.panel_exists("pan_old"));
+        // Version bumped exactly once; reopening is a no-op.
+        {
+            let conn = Connection::open(&path).unwrap();
+            let v: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0)).unwrap();
+            assert_eq!(v, SCHEMA_VERSION);
+        }
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn hypothesis_origin_roundtrip() {
+        let db = Db::in_memory().unwrap();
+        let mut input = HypothesisRegisterInput {
+            statement: "engine-seeded hypothesis".into(),
+            ..HypothesisRegisterInput::default()
+        };
+        input.origin = Some("agent".into());
+        db.add_hypothesis(&input).unwrap();
+        // Unknown origin values collapse to 'user'.
+        let mut rogue = HypothesisRegisterInput {
+            statement: "rogue".into(),
+            ..HypothesisRegisterInput::default()
+        };
+        rogue.origin = Some("skynet".into());
+        db.add_hypothesis(&rogue).unwrap();
+        let rows = db.hypotheses(None, 10).unwrap();
+        let agent = rows.iter().find(|r| r.statement == "engine-seeded hypothesis").unwrap();
+        assert_eq!(agent.origin, "agent");
+        let rogue_row = rows.iter().find(|r| r.statement == "rogue").unwrap();
+        assert_eq!(rogue_row.origin, "user");
+    }
+
+    #[test]
+    fn treatment_response_roundtrip() {
+        let db = Db::in_memory().unwrap();
+        let input = TreatmentResponseRegisterInput {
+            response_id: "antibiotic_transient_clearance".into(),
+            note: Some("doxycycline 3 months, recurred within 2".into()),
+        };
+        let id = db.add_treatment_response(&input).unwrap();
+        assert!(id.starts_with("tres_"));
+        assert!(db.treatment_response_exists(&id));
+        let rows = db.treatment_responses(50).unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].response_id, "antibiotic_transient_clearance");
+        assert_eq!(rows[0].patient_id, "user");
+        assert!(!db.treatment_response_exists("tres_missing"));
     }
 }

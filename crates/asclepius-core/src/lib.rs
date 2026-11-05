@@ -1,16 +1,21 @@
 pub mod analyte;
 pub mod bridge;
+pub mod causal;
 pub mod conditions;
 pub mod derived;
+pub mod envelope;
 pub mod error;
 pub mod interventions;
+pub mod investigate;
 pub mod literature;
+pub mod packs;
 pub mod panel;
 pub mod profile;
 pub mod range;
 pub mod rules;
 pub mod store;
 pub mod units;
+pub mod verify;
 
 pub const NAME: &str = "asclepius";
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

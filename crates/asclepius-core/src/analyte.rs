@@ -53,7 +53,6 @@ impl AnalyteRegistry {
     }
 
     pub fn load_dir(dir: &Path) -> Result<Self, AsclepiusError> {
-        let mut defs = Vec::new();
         let mut entries: Vec<_> = std::fs::read_dir(dir)?
             .filter_map(|e| e.ok())
             .map(|e| e.path())
@@ -66,8 +65,21 @@ impl AnalyteRegistry {
                 format!("no .toml analyte packs found in {}", dir.display()),
             )));
         }
-        for path in entries {
-            let raw = std::fs::read_to_string(&path)?;
+        Self::load_paths(&entries)
+    }
+
+    /// Load from an explicit, gate-admitted list of pack files (see
+    /// `packs::allowed_files`). Empty input is an error.
+    pub fn load_paths(paths: &[std::path::PathBuf]) -> Result<Self, AsclepiusError> {
+        if paths.is_empty() {
+            return Err(AsclepiusError::Io(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "no gate-admitted analyte packs",
+            )));
+        }
+        let mut defs = Vec::new();
+        for path in paths {
+            let raw = std::fs::read_to_string(path)?;
             let parsed: AnalyteFile =
                 toml::from_str(&raw).map_err(|source| AsclepiusError::Toml {
                     file: path.display().to_string(),

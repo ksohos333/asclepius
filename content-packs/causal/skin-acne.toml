@@ -1,0 +1,231 @@
+# Causal graph: cystic acne root causes.
+# Transcribed from the acne_root_causes condition card (conditions/skin.toml).
+# Edge weights are curated priors (0..1): the score engine takes the
+# strongest path to the symptom node as the base score, then updates with
+# committed lab facts (probes) and registered treatment responses.
+# Tiers follow the same honesty scale as every other pack: B = replicated
+# human evidence, C = emerging/mechanistic, D = hypothesis-grade.
+
+[[node]]
+id = "cystic_acne_lesions"
+kind = "symptom"
+name = "Cystic acne lesions"
+summary = "Inflammatory, nodulocystic lesions of the face and trunk; the visible endpoint of several converging upstream drivers."
+condition = "acne_root_causes"
+tier = "B"
+sources = ["acne vulgaris pathophysiology literature"]
+review_by = "2027-06-01"
+
+[[node]]
+id = "sebum_hyperproduction"
+kind = "mechanism"
+name = "Sebum hyperproduction"
+summary = "Sebaceous gland output driven by androgen activity and insulin/IGF-1 signaling; the substrate follicular inflammation feeds on."
+condition = "acne_root_causes"
+tier = "B"
+sources = ["androgen and sebum physiology literature"]
+review_by = "2027-06-01"
+
+[[node]]
+id = "follicular_hyperkeratinization"
+kind = "mechanism"
+name = "Follicular hyperkeratinization"
+summary = "Increased keratinocyte proliferation and impaired desquamation plugging the pilosebaceous unit; comedone formation."
+condition = "acne_root_causes"
+tier = "B"
+sources = ["retinoid mechanism literature"]
+review_by = "2027-06-01"
+
+[[node]]
+id = "skin_inflammation"
+kind = "mechanism"
+name = "Skin inflammation"
+summary = "Barrier-level inflammatory activity prolonging lesion life and severity; fed by systemic inflammatory load and the gut-skin axis."
+condition = "acne_root_causes"
+tier = "C"
+sources = ["gut-skin axis reviews (emerging literature)"]
+review_by = "2027-06-01"
+
+[[node]]
+id = "androgen_drive"
+kind = "root_cause"
+name = "Androgen drive (free androgen fraction)"
+summary = "Free testosterone and DHT activity in sebaceous glands. Low SHBG raises the free fraction; total T alone can mislead. Probes: SHBG (expect low), calculated free T (expect high), total T, DHEA-S."
+condition = "acne_root_causes"
+tier = "B"
+sources = ["androgen-acne physiology; SHBG and free androgen fraction literature"]
+probes = [
+    { analyte = "shbg", expect = "below", weight = 0.10 },
+    { analyte = "free_testosterone_vermeulen", expect = "above", weight = 0.15 },
+    { analyte = "testosterone_total", expect = "above", weight = 0.05 },
+    { analyte = "dhea_s", expect = "above", weight = 0.10 },
+]
+review_by = "2027-06-01"
+
+[[node]]
+id = "hyperinsulinemia_igf1"
+kind = "root_cause"
+name = "Hyperinsulinemia / IGF-1 signaling"
+summary = "High-glycemic diets and whey/dairy protein raise insulin and IGF-1, stimulating sebum and keratinocyte proliferation. The best-evidenced dietary axis (RCTs on glycemic load). Probes: fasting insulin, HOMA-IR, glucose, IGF-1."
+condition = "acne_root_causes"
+tier = "B"
+sources = ["glycemic load and acne RCTs (Smith et al. 2007 and successors)", "dairy-acne association meta-analyses"]
+probes = [
+    { analyte = "insulin", expect = "above", weight = 0.15 },
+    { analyte = "homa_ir", expect = "above", weight = 0.15 },
+    { analyte = "glucose", expect = "above", weight = 0.05 },
+    { analyte = "igf_1", expect = "above", weight = 0.10 },
+]
+review_by = "2027-06-01"
+
+[[node]]
+id = "gut_dysbiosis"
+kind = "root_cause"
+name = "Gut dysbiosis (gut-skin axis)"
+summary = "Intestinal dysbiosis and permeability driving systemic inflammation and skin lesions. Emerging tier-C evidence; no routine blood probe — SIBO breath testing and stool panels belong to the investigation layer. Transient antibiotic response with recurrence is its signature."
+condition = "acne_root_causes"
+tier = "C"
+sources = ["gut-skin axis reviews (emerging literature)"]
+probes = []
+review_by = "2027-06-01"
+
+[[node]]
+id = "linoleic_acid_deficiency"
+kind = "root_cause"
+name = "Sebum linoleic acid deficiency"
+summary = "Linoleic acid deficiency in sebum promotes follicular hyperkeratinization and comedone formation. No routine blood probe; mechanistic tier C."
+condition = "acne_root_causes"
+tier = "C"
+sources = ["sebum lipid composition studies"]
+probes = []
+review_by = "2027-06-01"
+
+[[node]]
+id = "systemic_inflammation"
+kind = "root_cause"
+name = "Low-grade systemic inflammation"
+summary = "Systemic inflammatory load impairing barrier repair and prolonging lesions; a converging endpoint of several upstream causes (gut, diet, sleep)."
+condition = "acne_root_causes"
+tier = "C"
+sources = ["inflammation and skin barrier literature"]
+probes = [
+    { analyte = "crp", expect = "above", weight = 0.10 },
+]
+review_by = "2027-06-01"
+
+[[node]]
+id = "hyperprolactinemia"
+kind = "root_cause"
+name = "Hyperprolactinemia"
+summary = "Modest prolactin elevation is associated with sebum stimulation and acne in case literature; a card biomarker worth scoring when the value exists."
+condition = "acne_root_causes"
+tier = "C"
+sources = ["prolactin and sebaceous gland case literature"]
+probes = [
+    { analyte = "prolactin", expect = "above", weight = 0.15 },
+]
+review_by = "2027-06-01"
+
+[[edge]]
+from = "androgen_drive"
+to = "sebum_hyperproduction"
+weight = 0.5
+tier = "B"
+sources = ["androgen and sebum physiology literature"]
+review_by = "2027-06-01"
+
+[[edge]]
+from = "androgen_drive"
+to = "cystic_acne_lesions"
+weight = 0.35
+tier = "B"
+sources = ["androgen-acne literature"]
+review_by = "2027-06-01"
+
+[[edge]]
+from = "hyperinsulinemia_igf1"
+to = "sebum_hyperproduction"
+weight = 0.4
+tier = "B"
+sources = ["insulin/IGF-1 and sebum literature"]
+review_by = "2027-06-01"
+
+[[edge]]
+from = "hyperinsulinemia_igf1"
+to = "follicular_hyperkeratinization"
+weight = 0.3
+tier = "B"
+sources = ["IGF-1 and keratinocyte proliferation literature"]
+review_by = "2027-06-01"
+
+[[edge]]
+from = "hyperinsulinemia_igf1"
+to = "cystic_acne_lesions"
+weight = 0.25
+tier = "B"
+sources = ["glycemic load RCTs"]
+review_by = "2027-06-01"
+
+[[edge]]
+from = "gut_dysbiosis"
+to = "skin_inflammation"
+weight = 0.35
+tier = "C"
+sources = ["gut-skin axis reviews (emerging literature)"]
+review_by = "2027-06-01"
+
+[[edge]]
+from = "gut_dysbiosis"
+to = "cystic_acne_lesions"
+weight = 0.35
+tier = "C"
+sources = ["gut-skin axis reviews; oral probiotic acne RCT signal (small)"]
+review_by = "2027-06-01"
+
+[[edge]]
+from = "systemic_inflammation"
+to = "skin_inflammation"
+weight = 0.3
+tier = "C"
+sources = ["inflammation and barrier literature"]
+review_by = "2027-06-01"
+
+[[edge]]
+from = "linoleic_acid_deficiency"
+to = "follicular_hyperkeratinization"
+weight = 0.35
+tier = "C"
+sources = ["sebum linoleic acid studies"]
+review_by = "2027-06-01"
+
+[[edge]]
+from = "hyperprolactinemia"
+to = "cystic_acne_lesions"
+weight = 0.15
+tier = "C"
+sources = ["prolactin-acne case literature"]
+review_by = "2027-06-01"
+
+[[edge]]
+from = "sebum_hyperproduction"
+to = "cystic_acne_lesions"
+weight = 0.6
+tier = "B"
+sources = ["acne pathophysiology"]
+review_by = "2027-06-01"
+
+[[edge]]
+from = "follicular_hyperkeratinization"
+to = "cystic_acne_lesions"
+weight = 0.5
+tier = "B"
+sources = ["comedone pathophysiology; retinoid mechanism"]
+review_by = "2027-06-01"
+
+[[edge]]
+from = "skin_inflammation"
+to = "cystic_acne_lesions"
+weight = 0.4
+tier = "C"
+sources = ["inflammatory lesion literature"]
+review_by = "2027-06-01"
