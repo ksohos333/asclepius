@@ -1,0 +1,120 @@
+# The curated corpus: key papers as pack data, tier-tagged and review-dated.
+# Honesty rules for entries: PMIDs included only when verified; unverified
+# citations stay author-year-descriptive with a note to confirm via
+# literature_verify (ASCLEPIUS_PUBMED=1). Summaries are curatorial claims.
+
+# ---------- PSSD / PAWS core ----------
+
+[[paper]]
+id = "hogan2019"
+title = "Persistent sexual dysfunction after antidepressant exposure — case series (332 cases)"
+authors = "Hogan, Le Noury, Healy, et al."
+year = 2019
+tier = "C"
+tags = ["pssd", "case-series", "pharmacovigilance"]
+summary = "The anchor case series for post-antidepressant sexual dysfunction: 332 cases of sexual dysfunction persisting after drug cessation, gathered through a patient-initiated reporting process. Case-series evidence (tier C) — the largest structured collection in this literature."
+review_by = "2027-06-01"
+
+[[paper]]
+id = "bahrick_pssd"
+title = "Post-SSRI sexual dysfunction — case reports"
+authors = "Bahrick"
+year = 2008
+tier = "C"
+tags = ["pssd", "case-report"]
+summary = "Early clinical case reports describing persistent sexual dysfunction after SSRI discontinuation — among the first clinical acknowledgments of the phenomenon."
+review_by = "2027-06-01"
+
+[[paper]]
+id = "ema_prac_pssd"
+title = "EMA PRAC assessment: persistent sexual dysfunction reported with SSRIs/SSNRIs"
+authors = "European Medicines Agency, Pharmacovigilance Risk Assessment Committee"
+year = 2019
+tier = "C"
+tags = ["pssd", "regulatory", "pharmacovigilance"]
+summary = "The regulator's signal review of persistent sexual dysfunction reports with SSRIs/SNRIs; concluded the evidence did not support a labeling change at that time — itself a document about how evidence standards interact with patient-reported harms."
+review_by = "2027-06-01"
+
+[[paper]]
+id = "healy_pharmacovigilance"
+title = "Pharmacovigilance analyses of SSRI-associated sexual adverse effects"
+authors = "Healy and colleagues"
+year = 2020
+tier = "C"
+tags = ["pssd", "pharmacovigilance"]
+summary = "Disproportionality and reporting-bias analyses around SSRI sexual adverse effects; frames why spontaneous-reporting systems undercount this class of harm."
+review_by = "2027-06-01"
+
+[[paper]]
+id = "ashton_benzo"
+title = "Benzodiazepine withdrawal: protracted symptoms and the Ashton manual literature"
+authors = "Ashton"
+year = 2002
+tier = "C"
+tags = ["paws", "protracted-withdrawal", "benzodiazepine"]
+summary = "The strongest literature base for protracted withdrawal: waves-windows phenomenology, receptor-adaptation recovery timescales, and the case for slow supervised tapers."
+review_by = "2027-06-01"
+
+[[paper]]
+id = "neurosteroid_ssri"
+title = "Neurosteroid (allopregnanolone) changes with SSRI exposure and withdrawal"
+authors = "multiple groups"
+year = 2015
+tier = "C"
+tags = ["pssd", "paws", "neurosteroid", "mechanistic"]
+summary = "Mechanistic literature on 5-alpha-reductase-pathway neurosteroid changes during and after SSRI exposure; the basis of the neurosteroid root-cause hypothesis."
+review_by = "2027-06-01"
+
+# ---------- Method anchors (formulas and instruments the engine uses) ----------
+
+[[paper]]
+id = "vermeulen1999"
+title = "A critical evaluation of simple methods for the estimation of free testosterone in serum (Vermeulen)"
+authors = "Vermeulen, Verdonck, Kaufman"
+year = 1999
+tier = "A"
+tags = ["free-testosterone", "method", "vermeulen"]
+summary = "The published formula this engine's calculated free testosterone implements; the verifier reimplements it independently from this paper's definition."
+review_by = "2027-06-01"
+
+[[paper]]
+id = "matthews1985"
+title = "Homeostasis model assessment: insulin resistance and beta-cell function from fasting glucose and insulin (HOMA)"
+authors = "Matthews, Hosker, Rudenski, Naylor, Treacher, Turner"
+year = 1985
+tier = "A"
+tags = ["homa-ir", "method", "insulin"]
+summary = "The HOMA-IR derivation (glucose x insulin / 405) implemented by the derived-biomarker layer."
+review_by = "2027-06-01"
+
+[[paper]]
+id = "rosen_iief5"
+title = "The International Index of Erectile Function (IIEF-5 / SHIM)"
+authors = "Rosen, Cappelleri, Smith, Lipsky, Pena"
+year = 1999
+tier = "A"
+tags = ["instrument", "iief", "erectile-function"]
+summary = "The validated 5-item instrument our adapted erectile-function track is modeled on (domain structure only; our wording is explicitly not a validated administration)."
+review_by = "2027-06-01"
+
+# ---------- Gut-skin / acne anchors ----------
+
+[[paper]]
+id = "bowe_logan_2011"
+title = "Acne vulgaris, probiotics and the gut-brain-skin axis"
+authors = "Bowe, Logan"
+year = 2011
+tier = "C"
+tags = ["acne", "gut-skin", "probiotics", "microbiome"]
+summary = "The review that consolidated the gut-brain-skin axis for acne: strain-level probiotic evidence, microbiome-skin signaling, and the small-RCT basis for oral probiotics in acne."
+review_by = "2027-06-01"
+
+[[paper]]
+id = "smith2007_glycemic"
+title = "A low-glycemic-load diet improves symptoms of acne vulgaris: a randomized controlled trial"
+authors = "Smith, Mann, Braue, Mäkeläinen, Varigos"
+year = 2007
+tier = "B"
+tags = ["acne", "glycemic-load", "rct", "diet"]
+summary = "The anchor RCT for the dietary lever: significant lesion reduction on a low-glycemic-load diet, with insulin/IGF-1 pathway measures — the best-evidenced dietary intervention for acne."
+review_by = "2027-06-01"

@@ -3,6 +3,7 @@ pub mod bridge;
 pub mod causal;
 pub mod community;
 pub mod conditions;
+pub mod corpus;
 pub mod derived;
 pub mod envelope;
 pub mod error;

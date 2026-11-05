@@ -31,6 +31,7 @@ pub const DOMAINS: &[&str] = &[
     "regions",
     "symptoms",
     "community-signals",
+    "corpus",
 ];
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -67,6 +68,7 @@ pub struct PackIndex {
     test_ids: BTreeSet<String>,
     scale_ids: BTreeSet<String>,
     signal_ids: BTreeSet<String>,
+    corpus_ids: BTreeSet<String>,
     pub today: String,
 }
 
@@ -91,6 +93,7 @@ impl PackIndex {
             test_ids: BTreeSet::new(),
             scale_ids: BTreeSet::new(),
             signal_ids: BTreeSet::new(),
+            corpus_ids: BTreeSet::new(),
             today: today.into(),
         }
     }
@@ -143,6 +146,7 @@ impl PackIndex {
             || self.test_ids.contains(id)
             || self.scale_ids.contains(id)
             || self.signal_ids.contains(id)
+            || self.corpus_ids.contains(id)
     }
 
     pub fn is_empty(&self) -> bool {
@@ -246,6 +250,9 @@ pub fn load_pack_index(root: &Path) -> PackIndex {
     }
     for file in parsed.get("community-signals").into_iter().flatten() {
         collect_ids(&file.value, "signal", "id", &mut index.signal_ids);
+    }
+    for file in parsed.get("corpus").into_iter().flatten() {
+        collect_ids(&file.value, "paper", "id", &mut index.corpus_ids);
     }
 
     // Pass 3: cross-domain referential integrity. A file with a dangling
@@ -728,6 +735,29 @@ pub fn load_pack_index(root: &Path) -> PackIndex {
             }
         }
     }
+    // Corpus: paper ids unique per file.
+    let mut corpus_ids_seen: BTreeSet<String> = BTreeSet::new();
+    for file in parsed.get("corpus").into_iter().flatten() {
+        if !index.files.contains_key(&file.rel_path) {
+            continue;
+        }
+        for paper in file
+            .value
+            .get("paper")
+            .and_then(|v| v.as_array())
+            .into_iter()
+            .flatten()
+        {
+            if let Some(id) = paper.get("id").and_then(|v| v.as_str()) {
+                if !corpus_ids_seen.insert(id.to_string()) {
+                    cascading_offenders.push((
+                        file.rel_path.clone(),
+                        format!("duplicate corpus paper id '{id}'"),
+                    ));
+                }
+            }
+        }
+    }
     if !cascading_offenders.is_empty() {
         let bad: BTreeSet<String> = cascading_offenders
             .iter()
@@ -759,6 +789,11 @@ pub fn load_pack_index(root: &Path) -> PackIndex {
         for file in parsed.get("community-signals").into_iter().flatten() {
             if index.files.contains_key(&file.rel_path) {
                 collect_ids(&file.value, "signal", "id", &mut index.signal_ids);
+            }
+        }
+        for file in parsed.get("corpus").into_iter().flatten() {
+            if index.files.contains_key(&file.rel_path) {
+                collect_ids(&file.value, "paper", "id", &mut index.corpus_ids);
             }
         }
     }

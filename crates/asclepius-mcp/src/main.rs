@@ -5,6 +5,7 @@ use asclepius_core::causal::{
 };
 use asclepius_core::community::CommunitySignals;
 use asclepius_core::conditions::{ConditionLibrary, ConditionQuery};
+use asclepius_core::corpus::Corpus;
 use asclepius_core::derived::{
     DERIVED_IDS, FreeTInput, HomaInput, free_testosterone_vermeulen, homa_ir,
 };
@@ -57,6 +58,7 @@ struct Asclepius {
     regions: Arc<RegionSet>,
     symptoms: Arc<SymptomSet>,
     signals: Arc<CommunitySignals>,
+    corpus: Arc<Corpus>,
     pubmed: Arc<PubMedClient>,
     bridge: Arc<Bridge>,
     db: Arc<Db>,
@@ -154,6 +156,7 @@ impl Asclepius {
                 "interventions": self.interventions.all().len(),
                 "triage_rules": self.triage.len(),
                 "symptom_scales": self.symptoms.all().len(),
+                "corpus_papers": self.corpus.all().len(),
             }),
             vec![
                 "pack:analytes".into(),
@@ -163,6 +166,7 @@ impl Asclepius {
                 "pack:interventions".into(),
                 "pack:triage".into(),
                 "pack:symptoms".into(),
+                "pack:corpus".into(),
             ],
         )
         .claim(
@@ -1479,6 +1483,15 @@ impl Asclepius {
                 vec![pack_ref.into()],
             );
         }
+        for hit in self.corpus.search(&input.query, limit) {
+            b.claim(
+                ClaimKind::Curated,
+                format!("corpus: {} ({})", hit.title, hit.year),
+                serde_json::to_value(&hit).unwrap_or(serde_json::Value::Null),
+                vec!["pack:corpus".into()],
+            )
+            .tier(&hit.tier);
+        }
         let local_hits = local_search(
             &self.conditions,
             &self.rules,
@@ -1834,6 +1847,15 @@ impl Asclepius {
             serde_json::json!(&claim),
             vec!["query:literature_verify".into()],
         );
+        for hit in self.corpus.search(&claim, limit) {
+            b.claim(
+                ClaimKind::Curated,
+                format!("corpus: {} ({})", hit.title, hit.year),
+                serde_json::to_value(&hit).unwrap_or(serde_json::Value::Null),
+                vec!["pack:corpus".into()],
+            )
+            .tier(&hit.tier);
+        }
         for hit in &local_hits {
             let pack_ref = match hit.kind.as_str() {
                 "condition" => "pack:conditions",
@@ -2553,6 +2575,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let symptoms = SymptomSet::load_paths(&packs::allowed_files(&root, "symptoms", &index))?;
     let signals =
         CommunitySignals::load_paths(&packs::allowed_files(&root, "community-signals", &index))?;
+    let corpus = Corpus::load_paths(&packs::allowed_files(&root, "corpus", &index))?;
     let pubmed = PubMedClient::from_env();
     let bridge = Bridge::from_env();
     let db_path = data_home().join("asclepius.db");
@@ -2588,6 +2611,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         regions: Arc::new(regions),
         symptoms: Arc::new(symptoms),
         signals: Arc::new(signals),
+        corpus: Arc::new(corpus),
         pubmed: Arc::new(pubmed),
         bridge: Arc::new(bridge),
         db: Arc::new(db),
