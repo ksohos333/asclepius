@@ -1,0 +1,113 @@
+# Symptom scales: patient-reported outcomes as pack data. Every scale
+# carries its prompt wording, range, conditions, and review date. Adapted
+# instruments are clearly labeled: validated administrations require the
+# original copyrighted item text (cited, not copied).
+
+[[scale]]
+id = "genital_sensation"
+name = "Genital sensation"
+kind = "single_item"
+conditions = ["pssd"]
+prompt = "Genital sensation today: 0 = complete numbness, 10 = normal sensation"
+score = { kind = "single", min = 0, max = 10 }
+sources = ["patient-community tracking conventions (tier D)", "PSSD case literature describing genital numbness as core symptom"]
+review_by = "2027-06-01"
+
+[[scale]]
+id = "libido"
+name = "Libido (sex drive)"
+kind = "single_item"
+conditions = ["pssd"]
+prompt = "Sex drive today: 0 = absent, 10 = normal for you"
+score = { kind = "single", min = 0, max = 10 }
+sources = ["libido item conventions in sexual-function instruments (SIEDY, IIEF domains)"]
+review_by = "2027-06-01"
+
+[[scale]]
+id = "orgasm_quality"
+name = "Orgasm quality"
+kind = "single_item"
+conditions = ["pssd"]
+prompt = "Orgasm quality (when present): 0 = pleasureless or absent, 10 = normal intensity"
+score = { kind = "single", min = 0, max = 10 }
+sources = ["anorgasmia/hypogeusia item conventions in sexual-function literature"]
+review_by = "2027-06-01"
+
+[[scale]]
+id = "erectile_function_adapted"
+name = "Erectile function (adapted single item)"
+kind = "single_item"
+conditions = ["pssd"]
+prompt = "Erection adequacy for sexual activity (when attempted): 0 = never sufficient, 10 = reliably sufficient"
+score = { kind = "single", min = 0, max = 10 }
+adapted = true
+sources = ["adapted from IIEF erectile-function domain concepts (Rosen et al. 1999); single-item adaptation, not a validated administration"]
+review_by = "2027-06-01"
+
+[[scale]]
+id = "mood_blunting"
+name = "Emotional blunting"
+kind = "single_item"
+conditions = ["pssd", "paws"]
+prompt = "Emotional range today: 0 = completely flat/numb, 10 = full normal range"
+score = { kind = "single", min = 0, max = 10 }
+sources = ["emotional blunting literature in SSRI-treated and post-drug populations (Goodwin et al. scale concepts, tier C)"]
+review_by = "2027-06-01"
+
+[[scale]]
+id = "cognitive_clarity"
+name = "Cognitive clarity (brain fog)"
+kind = "single_item"
+conditions = ["paws", "pssd"]
+prompt = "Mental clarity today: 0 = dense fog, 10 = sharp"
+score = { kind = "single", min = 0, max = 10 }
+sources = ["protracted-withdrawal cognitive-fog descriptions (Ashton manual concepts, tier C)"]
+review_by = "2027-06-01"
+
+[[scale]]
+id = "sleep_quality"
+name = "Sleep quality"
+kind = "single_item"
+conditions = ["paws", "pssd"]
+prompt = "Sleep quality last night: 0 = barely slept, 10 = deeply rested"
+score = { kind = "single", min = 0, max = 10 }
+sources = ["single-item sleep-quality conventions (consistent with Pittsburgh sleep-quality index concepts, tier B for the domain)"]
+review_by = "2027-06-01"
+
+[[scale]]
+id = "wave_state"
+name = "Wave/window state (PAWS)"
+kind = "single_item"
+conditions = ["paws"]
+prompt = "Today overall: negative values feel like a wave (symptoms strong), positive like a window (relative normality): -5 = severe wave, +5 = clear window, 0 = neutral/mixed"
+score = { kind = "single", min = -5, max = 5 }
+sources = ["waves-windows pattern documentation in protracted withdrawal communities (tier D)"]
+review_by = "2027-06-01"
+
+[[scale]]
+id = "acne_severity_self"
+name = "Acne severity (self-report)"
+kind = "single_item"
+conditions = ["acne_root_causes"]
+prompt = "Skin today: 0 = completely clear, 10 = worst ever (count and tenderness of active lesions)"
+score = { kind = "single", min = 0, max = 10 }
+sources = ["self-reported acne severity conventions (IGA/SGA scale concepts, adapted single-item)"]
+adapted = true
+review_by = "2027-06-01"
+
+[[scale]]
+id = "iief5_adapted"
+name = "Adapted 5-domain erectile function track"
+kind = "instrument"
+conditions = ["pssd"]
+items = [
+    { id = "confidence", prompt = "Confidence in achieving/maintaining erection: 1 = very low, 5 = very high", min = 1, max = 5 },
+    { id = "firmness", prompt = "Erection firmness when achieved: 1 = very soft, 5 = fully rigid", min = 1, max = 5 },
+    { id = "maintenance_ability", prompt = "Ability to maintain to completion: 1 = almost never, 5 = almost always", min = 1, max = 5 },
+    { id = "maintenance_difficulty", prompt = "Difficulty maintaining during intercourse: 1 = extremely difficult, 5 = not difficult", min = 1, max = 5 },
+    { id = "satisfaction", prompt = "Satisfaction with sexual life overall this week: 1 = very dissatisfied, 5 = very satisfied", min = 1, max = 5 },
+]
+score = { kind = "sum", min = 5, max = 25, interpret = "lower = worse; track the sum over weeks, not single days" }
+adapted = true
+sources = ["domain structure adapted from IIEF-5 (Rosen et al. 1999); wording is our own — this is NOT a validated IIEF-5 administration; use a licensed original for clinical documentation"]
+review_by = "2027-06-01"

@@ -131,9 +131,32 @@ fn verify_measured(claim: &Claim, db: Option<&Db>, failures: &mut Vec<String>) {
         return;
     };
     for r in &claim.evidence {
+        if let Some(sym_id) = r.strip_prefix("ledger:symptom_logs/") {
+            match db.get_symptom_log(sym_id) {
+                Some(log) => {
+                    let value_ok = json_f64(&claim.value, "value")
+                        .map(|v| close_enough(v, log.value))
+                        .unwrap_or(false);
+                    let scale_ok = json_str(&claim.value, "analyte") == Some(log.scale_id.as_str());
+                    if !value_ok || !scale_ok {
+                        failures.push(format!(
+                            "{}: symptom observation does not match ledger row '{sym_id}' ({} = {})",
+                            claim.id,
+                            log.scale_id,
+                            log.value
+                        ));
+                    }
+                }
+                None => failures.push(format!(
+                    "{}: measured claim cites unknown symptom log '{sym_id}'",
+                    claim.id
+                )),
+            }
+            continue;
+        }
         let Some(fact_id) = r.strip_prefix("ledger:facts/") else {
             failures.push(format!(
-                "{}: measured claim evidence must be 'ledger:facts/<id>', got '{r}'",
+                "{}: measured claim evidence must be 'ledger:facts/<id>' or 'ledger:symptom_logs/<id>', got '{r}'",
                 claim.id
             ));
             continue;
@@ -360,6 +383,7 @@ fn verify_declared(claim: &Claim, db: Option<&Db>, packs: Option<&PackIndex>, fa
                     ("hypotheses", Some(db)) => db.hypothesis_exists(id),
                     ("trials", Some(db)) => db.trial_exists(id),
                     ("treatment_responses", Some(db)) => db.treatment_response_exists(id),
+                    ("symptom_logs", Some(db)) => db.symptom_log_exists(id),
                     (_, Some(_)) => false,
                     (_, None) => true, // no db to check against in this call
                 };
@@ -368,7 +392,13 @@ fn verify_declared(claim: &Claim, db: Option<&Db>, packs: Option<&PackIndex>, fa
                 }
             } else if !matches!(
                 rest,
-                "profile" | "facts" | "panels" | "hypotheses" | "trials" | "treatment_responses"
+                "profile"
+                    | "facts"
+                    | "panels"
+                    | "hypotheses"
+                    | "trials"
+                    | "treatment_responses"
+                    | "symptom_logs"
             ) {
                 failures.push(format!("{}: unknown ledger table in ref '{r}'", claim.id));
             }

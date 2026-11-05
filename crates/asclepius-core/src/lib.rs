@@ -16,6 +16,7 @@ pub mod profile;
 pub mod range;
 pub mod rules;
 pub mod store;
+pub mod symptoms;
 pub mod units;
 pub mod verify;
 

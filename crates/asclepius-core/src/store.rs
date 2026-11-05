@@ -7,7 +7,7 @@ use std::path::Path;
 use std::sync::Mutex;
 use uuid::Uuid;
 
-pub const SCHEMA_VERSION: i64 = 6;
+pub const SCHEMA_VERSION: i64 = 7;
 
 /// Current schema (v5). `patient_id` scopes every ledger row to one patient
 /// (single-patient today, multi-patient-ready); `origin` on hypotheses
@@ -94,6 +94,18 @@ CREATE TABLE IF NOT EXISTS treatment_responses (
     created_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_treatment_responses_patient ON treatment_responses(patient_id);
+CREATE TABLE IF NOT EXISTS symptom_logs (
+    id TEXT PRIMARY KEY,
+    patient_id TEXT NOT NULL DEFAULT 'user',
+    scale_id TEXT NOT NULL,
+    item_id TEXT,
+    value REAL NOT NULL,
+    observed_on TEXT,
+    note TEXT,
+    recorded_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_symptom_logs_scale ON symptom_logs(scale_id);
+CREATE INDEX IF NOT EXISTS idx_symptom_logs_patient ON symptom_logs(patient_id);
 "#;
 
 /// v4 -> v5: patient scoping on every table + hypothesis origin column.
@@ -341,6 +353,18 @@ pub struct TreatmentResponseRegisterInput {
     pub note: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct SymptomLogRow {
+    pub id: String,
+    pub patient_id: String,
+    pub scale_id: String,
+    pub item_id: Option<String>,
+    pub value: f64,
+    pub observed_on: Option<String>,
+    pub note: Option<String>,
+    pub recorded_at: i64,
+}
+
 #[derive(Debug)]
 pub struct Db {
     conn: Mutex<Connection>,
@@ -466,6 +490,130 @@ impl Db {
             .filter_map(|r| r.ok())
             .collect();
         Ok(rows)
+    }
+
+    pub fn symptom_log_exists(&self, id: &str) -> bool {
+        let conn = self.conn.lock().expect("db mutex poisoned");
+        conn.query_row(
+            "SELECT 1 FROM symptom_logs WHERE id = ?1 AND patient_id = ?2",
+            params![id, self.patient_id],
+            |_| Ok(()),
+        )
+        .is_ok()
+    }
+
+    pub fn get_symptom_log(&self, id: &str) -> Option<SymptomLogRow> {
+        let conn = self.conn.lock().expect("db mutex poisoned");
+        conn.query_row(
+            "SELECT id, patient_id, scale_id, item_id, value, observed_on, note, recorded_at
+             FROM symptom_logs WHERE id = ?1 AND patient_id = ?2",
+            params![id, self.patient_id],
+            |row| {
+                Ok(SymptomLogRow {
+                    id: row.get(0)?,
+                    patient_id: row.get(1)?,
+                    scale_id: row.get(2)?,
+                    item_id: row.get(3)?,
+                    value: row.get(4)?,
+                    observed_on: row.get(5)?,
+                    note: row.get(6)?,
+                    recorded_at: row.get(7)?,
+                })
+            },
+        )
+        .ok()
+    }
+
+    /// Append symptom observations (pre-validated against their scales).
+    pub fn log_symptoms(
+        &self,
+        entries: &[crate::symptoms::SymptomEntryInput],
+    ) -> Result<Vec<String>, AsclepiusError> {
+        let conn = self.conn.lock().expect("db mutex poisoned");
+        let mut ids = Vec::with_capacity(entries.len());
+        for entry in entries {
+            let id = format!("sym_{}", Uuid::new_v4());
+            conn.execute(
+                "INSERT INTO symptom_logs (id, patient_id, scale_id, item_id, value, observed_on, note, recorded_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                params![
+                    id,
+                    self.patient_id,
+                    entry.scale_id,
+                    entry.item_id,
+                    entry.value,
+                    entry.observed_on,
+                    entry.note,
+                    now_secs()
+                ],
+            )
+            .map_err(db_err)?;
+            ids.push(id);
+        }
+        Ok(ids)
+    }
+
+    /// Symptom observations for this patient, oldest first; optional scale filter.
+    pub fn symptom_logs(
+        &self,
+        scale_id: Option<&str>,
+        limit: usize,
+    ) -> Result<Vec<SymptomLogRow>, AsclepiusError> {
+        let conn = self.conn.lock().expect("db mutex poisoned");
+        let mut stmt = conn
+            .prepare(
+                "SELECT id, patient_id, scale_id, item_id, value, observed_on, note, recorded_at
+                 FROM symptom_logs WHERE patient_id = ?1 AND (?2 IS NULL OR scale_id = ?2)
+                 ORDER BY recorded_at DESC, rowid DESC LIMIT ?3",
+            )
+            .map_err(db_err)?;
+        let rows = stmt
+            .query_map(params![self.patient_id, scale_id, limit as i64], |row| {
+                Ok(SymptomLogRow {
+                    id: row.get(0)?,
+                    patient_id: row.get(1)?,
+                    scale_id: row.get(2)?,
+                    item_id: row.get(3)?,
+                    value: row.get(4)?,
+                    observed_on: row.get(5)?,
+                    note: row.get(6)?,
+                    recorded_at: row.get(7)?,
+                })
+            })
+            .map_err(db_err)?
+            .filter_map(|r| r.ok())
+            .collect();
+        Ok(rows)
+    }
+
+    /// Latest observation for a scale (and item, for instruments).
+    pub fn latest_symptom(
+        &self,
+        scale_id: &str,
+        item_id: Option<&str>,
+    ) -> Option<SymptomLogRow> {
+        let conn = self.conn.lock().expect("db mutex poisoned");
+        conn.query_row(
+            "SELECT id, patient_id, scale_id, item_id, value, observed_on, note, recorded_at
+             FROM symptom_logs
+             WHERE patient_id = ?1 AND scale_id = ?2
+               AND ((?3 IS NULL AND item_id IS NULL) OR item_id = ?3)
+             ORDER BY recorded_at DESC, rowid DESC LIMIT 1",
+            params![self.patient_id, scale_id, item_id],
+            |row| {
+                Ok(SymptomLogRow {
+                    id: row.get(0)?,
+                    patient_id: row.get(1)?,
+                    scale_id: row.get(2)?,
+                    item_id: row.get(3)?,
+                    value: row.get(4)?,
+                    observed_on: row.get(5)?,
+                    note: row.get(6)?,
+                    recorded_at: row.get(7)?,
+                })
+            },
+        )
+        .ok()
     }
 
     fn migrate(conn: &Connection) -> Result<(), AsclepiusError> {
@@ -1286,5 +1434,41 @@ mod tests {
         assert_eq!(rows[0].response_id, "antibiotic_transient_clearance");
         assert_eq!(rows[0].patient_id, "user");
         assert!(!db.treatment_response_exists("tres_missing"));
+    }
+
+    #[test]
+    fn symptom_log_roundtrip() {
+        let db = Db::in_memory().unwrap();
+        let entries = vec![
+            crate::symptoms::SymptomEntryInput {
+                scale_id: "genital_sensation".into(),
+                item_id: None,
+                value: 4.0,
+                observed_on: Some("2026-11-05".into()),
+                note: Some("slight improvement this week".into()),
+            },
+            crate::symptoms::SymptomEntryInput {
+                scale_id: "iief5_adapted".into(),
+                item_id: Some("q1".into()),
+                value: 3.0,
+                observed_on: Some("2026-11-05".into()),
+                note: None,
+            },
+        ];
+        let ids = db.log_symptoms(&entries).unwrap();
+        assert_eq!(ids.len(), 2);
+        assert!(ids[0].starts_with("sym_"));
+        assert!(db.symptom_log_exists(&ids[0]));
+        assert_eq!(db.get_symptom_log(&ids[0]).unwrap().value, 4.0);
+        let all = db.symptom_logs(None, 50).unwrap();
+        assert_eq!(all.len(), 2);
+        let filtered = db.symptom_logs(Some("genital_sensation"), 50).unwrap();
+        assert_eq!(filtered.len(), 1);
+        let latest_single = db.latest_symptom("genital_sensation", None).unwrap();
+        assert_eq!(latest_single.id, ids[0]);
+        let latest_item = db.latest_symptom("iief5_adapted", Some("q1")).unwrap();
+        assert_eq!(latest_item.value, 3.0);
+        assert!(db.latest_symptom("iief5_adapted", Some("q2")).is_none());
+        assert!(!db.symptom_log_exists("sym_missing"));
     }
 }

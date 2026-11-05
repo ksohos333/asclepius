@@ -29,6 +29,7 @@ pub const DOMAINS: &[&str] = &[
     "treatment-responses",
     "tests",
     "regions",
+    "symptoms",
 ];
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -63,6 +64,7 @@ pub struct PackIndex {
     causal_node_ids: BTreeSet<String>,
     response_ids: BTreeSet<String>,
     test_ids: BTreeSet<String>,
+    scale_ids: BTreeSet<String>,
     pub today: String,
 }
 
@@ -85,6 +87,7 @@ impl PackIndex {
             causal_node_ids: BTreeSet::new(),
             response_ids: BTreeSet::new(),
             test_ids: BTreeSet::new(),
+            scale_ids: BTreeSet::new(),
             today: today.into(),
         }
     }
@@ -125,8 +128,8 @@ impl PackIndex {
     }
 
     /// Whether a knowledge id (rule, triage rule, condition, intervention,
-    /// causal node, treatment-response pattern, investigation test) exists in
-    /// the admitted packs.
+    /// causal node, treatment-response pattern, investigation test, symptom
+    /// scale) exists in the admitted packs.
     pub fn knowledge_id_exists(&self, id: &str) -> bool {
         self.rule_ids.contains(id)
             || self.triage_ids.contains(id)
@@ -135,6 +138,7 @@ impl PackIndex {
             || self.causal_node_ids.contains(id)
             || self.response_ids.contains(id)
             || self.test_ids.contains(id)
+            || self.scale_ids.contains(id)
     }
 
     pub fn is_empty(&self) -> bool {
@@ -232,6 +236,9 @@ pub fn load_pack_index(root: &Path) -> PackIndex {
     }
     for file in parsed.get("tests").into_iter().flatten() {
         collect_ids(&file.value, "test", "id", &mut index.test_ids);
+    }
+    for file in parsed.get("symptoms").into_iter().flatten() {
+        collect_ids(&file.value, "scale", "id", &mut index.scale_ids);
     }
 
     // Pass 3: cross-domain referential integrity. A file with a dangling
@@ -619,6 +626,59 @@ pub fn load_pack_index(root: &Path) -> PackIndex {
             }
         }
     }
+    // Symptom scales: conditions must resolve; instrument items must be
+    // unique per scale; scale ids unique (offenders are file-level).
+    let mut scale_ids_seen: BTreeSet<String> = BTreeSet::new();
+    for file in parsed.get("symptoms").into_iter().flatten() {
+        if !index.files.contains_key(&file.rel_path) {
+            continue;
+        }
+        for scale in file
+            .value
+            .get("scale")
+            .and_then(|v| v.as_array())
+            .into_iter()
+            .flatten()
+        {
+            let id = scale.get("id").and_then(|v| v.as_str()).unwrap_or("<missing id>");
+            if !scale_ids_seen.insert(id.to_string()) {
+                cascading_offenders.push((
+                    file.rel_path.clone(),
+                    format!("duplicate symptom scale id '{id}'"),
+                ));
+            }
+            for condition in scale
+                .get("conditions")
+                .and_then(|v| v.as_array())
+                .into_iter()
+                .flatten()
+                .filter_map(|v| v.as_str())
+            {
+                if !index.condition_ids.contains(condition) {
+                    cascading_offenders.push((
+                        file.rel_path.clone(),
+                        format!("symptom scale '{id}' references unknown condition '{condition}'"),
+                    ));
+                }
+            }
+            let mut item_ids: BTreeSet<&str> = BTreeSet::new();
+            for item in scale
+                .get("items")
+                .and_then(|v| v.as_array())
+                .into_iter()
+                .flatten()
+            {
+                if let Some(item_id) = item.get("id").and_then(|v| v.as_str()) {
+                    if !item_ids.insert(item_id) {
+                        cascading_offenders.push((
+                            file.rel_path.clone(),
+                            format!("symptom scale '{id}' has duplicate item '{item_id}'"),
+                        ));
+                    }
+                }
+            }
+        }
+    }
     if !cascading_offenders.is_empty() {
         let bad: BTreeSet<String> = cascading_offenders
             .iter()
@@ -640,6 +700,11 @@ pub fn load_pack_index(root: &Path) -> PackIndex {
         for file in parsed.get("tests").into_iter().flatten() {
             if index.files.contains_key(&file.rel_path) {
                 collect_ids(&file.value, "test", "id", &mut index.test_ids);
+            }
+        }
+        for file in parsed.get("symptoms").into_iter().flatten() {
+            if index.files.contains_key(&file.rel_path) {
+                collect_ids(&file.value, "scale", "id", &mut index.scale_ids);
             }
         }
     }

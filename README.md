@@ -45,7 +45,7 @@ Treatment responses are first-class diagnostic evidence: "antibiotics cleared it
 
 Everything commits to an **append-only provenance ledger**: every fact carries its source, panel, and timestamps; derived values (Vermeulen free testosterone, HOMA-IR) carry their input fact ids and formula version; `fact_lineage` audits any claim back to measured values.
 
-## Tools (27)
+## Tools (29)
 
 Every tool returns the same envelope shape (`schema_version: 1`): `claims[]` (kind: measured / reported / derived / curated / inferred / conflict / meta, each with evidence ids, optional computation + tier + stale flag), `abstentions[]`, `pack_hashes` (content hashes this output was computed against), and `verifier` (pass/fail, claims checked, sha256 digest).
 
@@ -53,13 +53,14 @@ Every tool returns the same envelope shape (`schema_version: 1`): `claims[]` (ki
 |---|---|
 | Session | `ping` (reports excluded packs + knowledge gaps), `profile_get`, `profile_set` |
 | Labs | `lab_normalize` (dry-run), `lab_commit`, `lab_history`, `fact_lineage` |
+| Symptoms | `symptom_log` (pack-validated scales: single-item and instrument items — the patient-reported counterpart of lab_commit), `symptom_history` |
 | Derived | `derived_free_testosterone` (Vermeulen 1999), `derived_homa_ir` (Matthews 1985) |
 | Reasoning | `interpret_panel`, `explore_condition`, `hypothesis_register` (origin: user/engine/agent), `hypothesis_list`, `hypothesis_update` |
 | Causal | `root_cause_analysis` (graph scoring: base rates + lab probes + treatment responses, full contribution trails, coverage), `treatment_response_register` (treatment history as diagnostic evidence) |
 | Workup | `plan_workup` (tests ranked by expected discrimination of live causes per cost band; uncovered causes surfaced as gaps) |
 | Advocacy | `physician_brief` (specialty routing in evidence order, bilingual request scripts, acquisition routes, legal classes — region-scoped), `region_report` (region coverage + curation queue) |
 | Protocols | `propose_protocol` (natural-first ordering; region products attach purchasable rungs with label-honest disclosure — strain/CFU gaps named, stacking ceilings counted), `triage_check` |
-| Trials | `trial_begin`, `trial_log`, `trial_update_status`, `trial_list`, `trial_report` (deltas independently verified; n=1 caution boilerplate travels with every report) |
+| Trials | `trial_begin` (outcomes: lab analytes, derived ids, or single-item symptom scales), `trial_log`, `trial_update_status`, `trial_list`, `trial_report` (lab and symptom deltas independently verified, index-aligned baselines; n=1 caution boilerplate travels with every report) |
 | Evidence | `literature_verify` |
 
 ## Setup
@@ -154,6 +155,9 @@ content-packs/
                            #   interventions to real regional products
                            #   (same brand elsewhere = separate entry,
                            #   linked by shared_brand — never smeared)
+├── symptoms/              # patient-reported outcome scales: single-item 0-10
+                           #   and multi-item instruments (adapted wordings
+                           #   labeled; validated originals cited, not copied)
 ```
 
 Region resolution is deepest-layer-wins with per-entry `resolved_from` provenance — a Greek DUTCH route inherits from the EU layer and says so. Region data is never inferred: unset region, unsupported country, or missing route abstains loudly with the curation path named. `region` is private profile data (`profile_set {region: {country: "GR"}}`); legal classes are last-reviewed data, not legal advice.
@@ -193,7 +197,7 @@ Unit-conversion math and formulas are pure functions with unit tests against pub
 
 ## Status
 
-v0.7.0 — the full loop works end to end (verified with sequential-client probes: commit → interpret → protocol → gated trial → retest → delta report), every response travels as a verifier-checked assertion envelope, causal reasoning ranks root causes from base rates + committed labs + treatment responses, `plan_workup` orders the investigation by discrimination of live causes, the advocacy layer routes it regionally (`physician_brief`, bilingual scripts, legal classes), protocols ground to purchasable products (Eftonia → probiotic rung, label-honest), and the external audit ring is live: every verified envelope posts to the anticonf bridge with digest, claims, evidence, and auditable numbers, so LLM narration is diffable in one pass. Seeded knowledge: cystic acne graph (10 nodes), three treatment-response patterns, six investigation tests, GR region over EU and base layers. Thyroid/iron/mood graphs, more countries, and the 18 named analyte gaps are the curation queue. Ledger migrations (v4→v6) run automatically — back up `asclepius.db` before upgrading.
+v0.8.0 — the full loop works end to end, every response travels as a verifier-checked assertion envelope, causal reasoning ranks root causes from base rates + committed labs + treatment responses, `plan_workup` orders the investigation by discrimination of live causes, the advocacy layer routes it regionally, protocols ground to purchasable products, the external audit ring posts every verified envelope to the bridge — and symptom-centric conditions now have their evidence substrate: a symptom ledger with pack-validated scales (single-item 0-10, adapted instruments clearly labeled), `symptom_log`/`symptom_history`, and n=1 trials whose outcomes can be symptom scales with independently verified deltas. Seeded scales cover PSSD/PAWS (sensation, libido, orgasm, blunting, cognition, sleep, waves) and acne. Next: PSSD/PAWS causal graphs, the inference workbench, community signals. Ledger migrations (v4→v7) run automatically — back up `asclepius.db` before upgrading.
 
 ## How I built this
 

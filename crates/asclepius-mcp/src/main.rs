@@ -28,6 +28,7 @@ use asclepius_core::store::{
     LineageNode, LineageQuery, TreatmentResponseRegisterInput, TrialBeginInput, TrialListInput,
     TrialLogInput, TrialReportInput, TrialStatusInput,
 };
+use asclepius_core::symptoms::{SymptomHistoryInput, SymptomLogInput, SymptomSet};
 use asclepius_core::verify::verify_claims;
 use asclepius_core::{NAME, VERSION};
 use rmcp::handler::server::wrapper::Parameters;
@@ -49,6 +50,7 @@ struct Asclepius {
     causal: Arc<CausalGraph>,
     tests: Arc<TestLibrary>,
     regions: Arc<RegionSet>,
+    symptoms: Arc<SymptomSet>,
     pubmed: Arc<PubMedClient>,
     bridge: Arc<Bridge>,
     db: Arc<Db>,
@@ -145,6 +147,7 @@ impl Asclepius {
                 "condition_cards": self.conditions.all().len(),
                 "interventions": self.interventions.all().len(),
                 "triage_rules": self.triage.len(),
+                "symptom_scales": self.symptoms.all().len(),
             }),
             vec![
                 "pack:analytes".into(),
@@ -153,6 +156,7 @@ impl Asclepius {
                 "pack:conditions".into(),
                 "pack:interventions".into(),
                 "pack:triage".into(),
+                "pack:symptoms".into(),
             ],
         )
         .claim(
@@ -360,6 +364,134 @@ impl Asclepius {
                 ],
             );
         }
+        self.finish(b)
+    }
+
+    #[tool(
+        description = "Log patient-reported symptom observations: single-item scales (0-10 style) and instrument items, each validated against its pack-defined scale before commit. Entries are patient-scoped rows in the append-only ledger — the symptom counterpart of lab_commit. Use symptom_history to read trends. Examples: {entries: [{scale_id: \"genital_sensation\", value: 4}, {scale_id: \"iief5_adapted\", item_id: \"q1\", value: 3}]}"
+    )]
+    fn symptom_log(
+        &self,
+        Parameters(input): Parameters<SymptomLogInput>,
+    ) -> Result<CallToolResult, McpError> {
+        if input.entries.is_empty() {
+            return Err(McpError::invalid_params("entries is required", None));
+        }
+        let mut b = self.builder("symptom_log");
+        if input.entries.is_empty() {
+            b.abstention(
+                "symptom_log",
+                "no entries submitted",
+                vec!["at least one {scale_id, value}".into()],
+            );
+            return self.finish(b);
+        }
+        let mut valid = Vec::new();
+        for entry in &input.entries {
+            match self.symptoms.get(&entry.scale_id) {
+                None => {
+                    b.claim(
+                        ClaimKind::Meta,
+                        format!("rejected: unknown scale {}", entry.scale_id),
+                        serde_json::json!({
+                            "scale_id": entry.scale_id,
+                            "error": "unknown scale id; see pack symptom scales"
+                        }),
+                        vec!["gate:symptom_scale".into()],
+                    );
+                }
+                Some(scale) => match scale.check_value(entry.item_id.as_deref(), entry.value) {
+                    Ok(()) => valid.push(entry.clone()),
+                    Err(e) => {
+                        b.claim(
+                            ClaimKind::Meta,
+                            format!("rejected: {}", entry.scale_id),
+                            serde_json::json!({
+                                "scale_id": entry.scale_id,
+                                "item_id": entry.item_id,
+                                "value": entry.value,
+                                "error": e
+                            }),
+                            vec!["gate:symptom_range".into()],
+                        );
+                    }
+                },
+            }
+        }
+        if valid.is_empty() {
+            b.abstention(
+                "symptom_log",
+                "every submitted entry was rejected by scale validation",
+                vec!["check scale ids, item ids, and value ranges".into()],
+            );
+            return self.finish(b);
+        }
+        let observed_default = asclepius_core::envelope::today_iso();
+        let entries_with_dates: Vec<asclepius_core::symptoms::SymptomEntryInput> = valid
+            .into_iter()
+            .map(|mut e| {
+                if e.observed_on.is_none() {
+                    e.observed_on = Some(observed_default.clone());
+                }
+                e
+            })
+            .collect();
+        let ids = self
+            .db
+            .log_symptoms(&entries_with_dates)
+            .map_err(domain_error)?;
+        for (entry, id) in entries_with_dates.iter().zip(ids) {
+            let scale = self.symptoms.get(&entry.scale_id).expect("validated above");
+            b.claim(
+                ClaimKind::Measured,
+                format!(
+                    "{}{} = {} ({})",
+                    scale.name,
+                    entry.item_id.as_deref().map(|i| format!(":{i}")).unwrap_or_default(),
+                    entry.value,
+                    entry.observed_on.as_deref().unwrap_or("today")
+                ),
+                serde_json::json!({
+                    "analyte": entry.scale_id,
+                    "value": entry.value,
+                    "unit": "score",
+                    "item_id": entry.item_id,
+                    "observed_on": entry.observed_on,
+                    "note": entry.note,
+                }),
+                vec![format!("ledger:symptom_logs/{id}")],
+            );
+        }
+        self.finish(b)
+    }
+
+    #[tool(
+        description = "Query the symptom ledger: observations newest-first, optional scale filter. Patient-reported outcomes are measured facts in this system — same provenance, same verifier."
+    )]
+    fn symptom_history(
+        &self,
+        Parameters(input): Parameters<SymptomHistoryInput>,
+    ) -> Result<CallToolResult, McpError> {
+        let limit = input.limit.unwrap_or(50).clamp(1, 500);
+        let rows = self
+            .db
+            .symptom_logs(input.scale_id.as_deref(), limit)
+            .map_err(domain_error)?;
+        let mut b = self.builder("symptom_history");
+        if rows.is_empty() {
+            b.abstention(
+                "symptom_history",
+                "no symptom observations match this query",
+                vec![input.scale_id.unwrap_or_else(|| "any scale".into())],
+            );
+            return self.finish(b);
+        }
+        b.claim(
+            ClaimKind::Meta,
+            format!("{} symptom observations, newest first", rows.len()),
+            serde_json::to_value(&rows).unwrap_or(serde_json::Value::Null),
+            vec!["ledger:symptom_logs".into()],
+        );
         self.finish(b)
     }
 
@@ -1484,12 +1616,23 @@ impl Asclepius {
             ));
         }
         for analyte in &input.outcome_analytes {
+            if let Some(scale) = self.symptoms.get(analyte) {
+                if scale.kind != "single_item" {
+                    return Err(McpError::invalid_params(
+                        format!(
+                            "outcome '{analyte}' is a multi-item instrument: track its items via symptom_log instead (sum-score trial outcomes arrive later)"
+                        ),
+                        None,
+                    ));
+                }
+                continue; // valid single-item symptom scale outcome
+            }
             let known =
                 self.registry.get(analyte).is_some() || DERIVED_IDS.contains(&analyte.as_str());
             if !known {
                 return Err(McpError::invalid_params(
                     format!(
-                        "outcome analyte not recognized: {analyte}. use registry analyte ids or derived ids ({}); commit labs first",
+                        "outcome analyte not recognized: {analyte}. use registry analyte ids, derived ids ({}), or single-item symptom scale ids; commit values first",
                         DERIVED_IDS.join(", ")
                     ),
                     None,
@@ -1498,11 +1641,17 @@ impl Asclepius {
         }
         let mut baseline_ids: Vec<String> = Vec::new();
         let mut missing: Vec<String> = Vec::new();
-        let latest = self.db.latest_fact_ids(&input.outcome_analytes);
-        for (analyte, fact_id) in &latest {
-            match fact_id {
-                Some(id) => baseline_ids.push(id.clone()),
-                None => missing.push(analyte.clone()),
+        for outcome in &input.outcome_analytes {
+            if self.symptoms.get(outcome).is_some() {
+                match self.db.latest_symptom(outcome, None) {
+                    Some(log) => baseline_ids.push(log.id),
+                    None => missing.push(outcome.clone()),
+                }
+            } else {
+                match self.db.latest_fact(outcome).ok().flatten() {
+                    Some(fact) => baseline_ids.push(fact.id),
+                    None => missing.push(outcome.clone()),
+                }
             }
         }
         if card
@@ -1663,14 +1812,46 @@ impl Asclepius {
             serde_json::to_value(&log).unwrap_or(serde_json::Value::Null),
             vec![format!("ledger:trials/{trial_id}")],
         );
-        for analyte in &row.outcome_analytes {
-            let baseline = row
+        for (index, analyte) in row.outcome_analytes.iter().enumerate() {
+            // Outcomes are index-aligned with the baseline ids captured at
+            // trial_begin — labs and symptom logs alike.
+            let baseline_id = row
                 .baseline_fact_ids
                 .as_ref()
-                .and_then(|ids| ids.first())
+                .and_then(|ids| ids.get(index))
+                .cloned();
+            let baseline_symptom = baseline_id
+                .as_ref()
+                .and_then(|id| self.db.get_symptom_log(id));
+            let baseline_fact = baseline_id
+                .as_ref()
                 .and_then(|id| self.db.get_fact(id).ok().flatten());
-            let latest = self.db.latest_fact(analyte).ok().flatten();
-            if let Some(base) = &baseline {
+            let is_scale = self.symptoms.get(analyte).is_some();
+            let latest_symptom = if is_scale {
+                self.db.latest_symptom(analyte, None)
+            } else {
+                None
+            };
+            let latest_fact = if !is_scale {
+                self.db.latest_fact(analyte).ok().flatten()
+            } else {
+                None
+            };
+            if let Some(base) = &baseline_symptom {
+                b.claim(
+                    ClaimKind::Measured,
+                    format!("baseline {}: {} (score)", analyte, base.value),
+                    serde_json::json!({
+                        "analyte": analyte,
+                        "role": "baseline",
+                        "value": base.value,
+                        "unit": "score",
+                        "observed_on": base.observed_on,
+                    }),
+                    vec![format!("ledger:symptom_logs/{}", base.id)],
+                );
+            }
+            if let Some(base) = &baseline_fact {
                 b.claim(
                     ClaimKind::Measured,
                     format!("baseline {}: {} {}", analyte, base.value, base.unit),
@@ -1684,7 +1865,21 @@ impl Asclepius {
                     vec![format!("ledger:facts/{}", base.id)],
                 );
             }
-            if let Some(last) = &latest {
+            if let Some(last) = &latest_symptom {
+                b.claim(
+                    ClaimKind::Measured,
+                    format!("latest {}: {} (score)", analyte, last.value),
+                    serde_json::json!({
+                        "analyte": analyte,
+                        "role": "latest",
+                        "value": last.value,
+                        "unit": "score",
+                        "observed_on": last.observed_on,
+                    }),
+                    vec![format!("ledger:symptom_logs/{}", last.id)],
+                );
+            }
+            if let Some(last) = &latest_fact {
                 b.claim(
                     ClaimKind::Measured,
                     format!("latest {}: {} {}", analyte, last.value, last.unit),
@@ -1698,29 +1893,48 @@ impl Asclepius {
                     vec![format!("ledger:facts/{}", last.id)],
                 );
             }
-            if let (Some(base), Some(last)) = (&baseline, &latest) {
+            let base_value = baseline_symptom
+                .as_ref()
+                .map(|s| s.value)
+                .or(baseline_fact.as_ref().map(|f| f.value));
+            let base_ref = baseline_symptom
+                .as_ref()
+                .map(|s| format!("ledger:symptom_logs/{}", s.id))
+                .or(baseline_fact.as_ref().map(|f| format!("ledger:facts/{}", f.id)));
+            let last_value = latest_symptom
+                .as_ref()
+                .map(|s| s.value)
+                .or(latest_fact.as_ref().map(|f| f.value));
+            let last_ref = latest_symptom
+                .as_ref()
+                .map(|s| format!("ledger:symptom_logs/{}", s.id))
+                .or(latest_fact.as_ref().map(|f| format!("ledger:facts/{}", f.id)));
+            if let (Some(base_v), Some(last_v), Some(b_ref), Some(l_ref)) =
+                (base_value, last_value, base_ref, last_ref)
+            {
                 let mut inputs = BTreeMap::new();
-                inputs.insert("baseline".into(), serde_json::json!(base.value));
-                inputs.insert("latest".into(), serde_json::json!(last.value));
+                inputs.insert("baseline".into(), serde_json::json!(base_v));
+                inputs.insert("latest".into(), serde_json::json!(last_v));
                 b.derived(
                     format!("delta for {analyte} (latest minus baseline)"),
                     serde_json::json!({
                         "analyte": analyte,
-                        "value": last.value - base.value,
-                        "unit": last.unit,
+                        "value": last_v - base_v,
+                        "unit": "delta",
                     }),
-                    vec![
-                        format!("ledger:facts/{}", base.id),
-                        format!("ledger:facts/{}", last.id),
-                    ],
+                    vec![b_ref, l_ref],
                     "delta",
                     inputs,
                 );
             }
-            if baseline.is_none() && latest.is_none() {
+            if baseline_symptom.is_none()
+                && baseline_fact.is_none()
+                && latest_symptom.is_none()
+                && latest_fact.is_none()
+            {
                 b.abstention(
                     format!("trial_report:{analyte}"),
-                    "no baseline or latest facts for this outcome analyte",
+                    "no baseline or latest observation for this outcome",
                     vec![format!("commit {analyte} values")],
                 );
             }
@@ -2020,6 +2234,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     )?;
     let tests = TestLibrary::load_paths(&packs::allowed_files(&root, "tests", &index))?;
     let regions = RegionSet::load_paths(&packs::allowed_files(&root, "regions", &index))?;
+    let symptoms = SymptomSet::load_paths(&packs::allowed_files(&root, "symptoms", &index))?;
     let pubmed = PubMedClient::from_env();
     let bridge = Bridge::from_env();
     let db_path = data_home().join("asclepius.db");
@@ -2053,6 +2268,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         causal: Arc::new(causal),
         tests: Arc::new(tests),
         regions: Arc::new(regions),
+        symptoms: Arc::new(symptoms),
         pubmed: Arc::new(pubmed),
         bridge: Arc::new(bridge),
         db: Arc::new(db),
